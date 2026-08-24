@@ -21,6 +21,7 @@ Responsável por gerenciar toda a inteligência e segurança do cassino, garanti
 - [Histórias de Usuário](#histórias-de-usuário)
 - [Metodologia de Desenvolvimento](#metodologia-de-desenvolvimento)
 - [Dinâmica de Desenvolvimento](#dinâmica-de-desenvolvimento)
+- [Refatorações](#refatorações)
 - [Autores](#autores)
 - [Prompts](#prompts)
 
@@ -342,6 +343,37 @@ O maior desafio da dinâmica de desenvolvimento veio da criação do Gambit, um 
 Esses ajustes também geraram bloqueios pontuais entre as duplas, já que mudanças na lógica do Gambit no backend impactavam diretamente o trabalho das duplas de front, que dependiam dessas definições para avançar. Nesses casos, nos reorganizamos priorizando as implementações que destravavam o trabalho das outras duplas.
 
 A principal lição aprendida foi sobre a importância de definir melhor o escopo e as regras de uma funcionalidade original antes de começar a implementá-la. Boa parte dos refactors do Gambit poderia ter sido evitada com um planejamento inicial mais detalhado das mecânicas do jogo. Também percebemos que a ausência de uma Definição de Pronto (DoD) clara deixou alguns critérios de "terminado" subjetivos, e que adotá-la desde o início teria tornado as entregas mais previsíveis. Em um próximo projeto, investiríamos mais tempo no alinhamento de escopo logo no começo e formalizaríamos esses combinados que, neste projeto, ficaram apenas implícitos.
+
+---
+
+## Refatorações
+
+As 5 refatorações mais relevantes do projeto, cobrindo três tipos do catálogo: **Movimentação**, **Extração** e **Renomeação**.
+
+1. **Movimentação de utilitário entre camadas** — _move Cookies utility from ui to infrastructure_
+   - **Tipo:** Movimentação
+   - **Por quê:** move um utilitário para a camada correta, respeitando a arquitetura em camadas.
+   - **Commit:** [`bd6c603`](https://github.com/C14-INATEL/RedGreen-Front/commit/bd6c603)
+
+2. **Enum `SlotMachineColor` → `GameTableColor`** — promovido a um local compartilhado
+   - **Tipo:** Movimentação + Renomeação
+   - **Por quê:** o enum servia só ao Slot, mas passou a servir Slot e Gambit; promovê-lo a um local compartilhado e renomeá-lo evita duplicação e reflete o novo papel.
+   - **Commit:** _a definir_
+
+3. **Extração da busca de usuário para hook** — _fetch user from useUserProfile hook_
+   - **Tipo:** Extração
+   - **Por quê:** lógica de busca de usuário extraída para um hook reutilizável.
+   - **Commit:** [`291d2b0`](https://github.com/C14-INATEL/RedGreen-Front/commit/291d2b0)
+
+4. **Padronização de nomenclatura (PascalCase)** — _simplify UserProfile interface to PascalCase only_
+   - **Tipo:** Renomeação
+   - **Por quê:** padronização de nomenclatura segundo a convenção do projeto (ver [Prompts](#prompts)).
+   - **Commit:** [`1018199`](https://github.com/C14-INATEL/RedGreen-Front/commit/1018199)
+
+5. **Renomeação de componente** — _name change to GambitBetPanel_
+   - **Tipo:** Renomeação
+   - **Por quê:** o nome anterior não refletia bem a responsabilidade do componente; renomear melhora a legibilidade.
+   - **Commit:** [`edda7c1`](https://github.com/C14-INATEL/RedGreen-Front/commit/edda7c1)
 
 ---
 
