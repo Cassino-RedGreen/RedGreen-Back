@@ -48,7 +48,7 @@ Responsável por gerenciar toda a inteligência e segurança do cassino, garanti
 | **Documentação**             | Swagger (OpenAPI)                                |
 | **Testes**                   | Jest, Supertest                                  |
 | **Qualidade e Padronização** | ESLint, Prettier, Husky, Commitlint, lint-staged |
-| **CI/CD**                    | Jenkins (Pipeline Multibranch)                   |
+| **CI/CD**                    | GitHub Actions                                   |
 | **Deploy**                   | Render (API) + Neon (PostgreSQL)                 |
 | **Infraestrutura Local**     | Docker / Docker Compose                          |
 
@@ -169,7 +169,7 @@ RedGreen-Back/
 │       └── sessions/           # Sessão única por usuário (lock de plataforma)
 │
 ├── test/                       # Testes (Jest)
-├── Jenkinsfile                 # Pipeline de CI/CD (pipeline-as-code)
+├── .github/workflows/ci.yml    # Pipeline de CI/CD (pipeline-as-code)
 ├── docker-compose.yml          # Container do PostgreSQL (local)
 ├── .node-version               # Versão do Node (24)
 └── nest-cli.json               # Configurações do compilador
@@ -181,23 +181,32 @@ Cada módulo segue o padrão de camadas `domain/` · `application/` · `presenta
 
 ## Pipeline de CI/CD
 
-A pipeline é definida como código no [`Jenkinsfile`](Jenkinsfile) (raiz do projeto) e executada por um **Jenkins (Pipeline Multibranch)** hospedado numa instância **AWS EC2**.
+A pipeline é definida como código no workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) e executada pelo **GitHub Actions**, em runners `ubuntu-latest` hospedados pelo próprio GitHub.
 
-- **Gatilho:** um **webhook do GitHub** dispara a pipeline a cada _push_ em qualquer branch e em _Pull Requests_.
-- **Visibilidade:** o resultado aparece no GitHub como o check **`ci-cd/jenkins`** (ao lado do commit / dentro da PR).
-- **Node:** fixado na versão **24** (`tools { nodejs 'node24' }`).
+- **Gatilho:** todo _push_ em qualquer branch e _Pull Requests_ vindas de forks (uma PR da própria origem já é coberta pelo push da sua branch, evitando build duplicado).
+- **Visibilidade:** o resultado aparece como check no GitHub, ao lado do commit e dentro da PR.
+- **Node:** lido de [`.node-version`](.node-version) pelo `actions/setup-node`, com cache de dependências do npm.
+- **Concorrência:** um push novo cancela o build anterior ainda em execução na mesma branch.
 
-### Etapas (stages)
+### Jobs e etapas
 
-| Stage               | O que faz                                                         | Quando roda                 | Autor             |
-| ------------------- | ----------------------------------------------------------------- | --------------------------- | ----------------- |
-| **Dependencies**    | `npm ci` + `npm audit --audit-level=high`                         | sempre                      | Antonio Feliciano |
-| **Lint and Format** | `npm run lint:check` (ESLint) + `npm run format:check` (Prettier) | sempre                      | Antonio Feliciano |
-| **Tests**           | `npm test` (Jest)                                                 | sempre                      | Antonio Feliciano |
-| **Build**           | `npm run build` (`nest build`)                                    | sempre                      | Antonio Feliciano |
-| **Deploy**          | Dispara o deploy no Render (POST no _Deploy Hook_)                | **apenas na branch `main`** | Patrick Augusto   |
+| Job / Step                    | O que faz                                          | Quando roda                  |
+| ----------------------------- | -------------------------------------------------- | ---------------------------- |
+| **ci** · Install dependencies | `npm ci` (com `HUSKY=0`)                           | sempre                       |
+| **ci** · Audit dependencies   | `npm audit --audit-level=high`                     | sempre                       |
+| **ci** · Lint                 | `npm run lint:check` (ESLint)                      | sempre                       |
+| **ci** · Check formatting     | `npm run format:check` (Prettier)                  | sempre                       |
+| **ci** · Unit tests           | `npm test` (Jest)                                  | sempre                       |
+| **ci** · Build                | `npm run build` (`nest build`)                     | sempre                       |
+| **deploy**                    | Dispara o deploy no Render (POST no _Deploy Hook_) | **apenas em push na `main`** |
 
-Os stages rodam **em ordem** — se qualquer um falha, a pipeline aborta e o deploy **não acontece**. O stage **Deploy** é protegido por `when { branch 'main' }`, então PRs e demais branches rodam **só o CI** (sem deploy). Ao final, o workspace é limpo (`cleanWs()`).
+Os steps rodam **em ordem** — se qualquer um falha, o job aborta e o deploy **não acontece**. O job `deploy` declara `needs: ci` e é filtrado por `if: github.ref == 'refs/heads/main'`, então PRs e demais branches rodam **só o CI** (sem deploy). O runner é efêmero: cada execução começa numa máquina limpa.
+
+### Secrets necessários
+
+| Secret               | Onde configurar                              | Para que serve                                        |
+| -------------------- | -------------------------------------------- | ----------------------------------------------------- |
+| `RENDER_DEPLOY_HOOK` | _Settings → Secrets and variables → Actions_ | URL do Deploy Hook do Render, usada pelo job `deploy` |
 
 ---
 
@@ -205,12 +214,12 @@ Os stages rodam **em ordem** — se qualquer um falha, a pipeline aborta e o dep
 
 O deploy é **disparado pela própria pipeline**, somente quando o CI passa na branch `main`.
 
-| Componente         | Serviço                                          | Observação                                                                                          |
-| ------------------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| **API**            | [Render](https://render.com) (Web Service)       | _Auto-deploy desligado_ — o deploy é acionado pelo stage **Deploy** do Jenkins via **Deploy Hook**. |
-| **Banco de Dados** | [Neon](https://neon.com) (PostgreSQL serverless) | Persiste os dados; a API conecta via `POSTGRES_*` com `POSTGRES_SSL=true`.                          |
+| Componente         | Serviço                                          | Observação                                                                                               |
+| ------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| **API**            | [Render](https://render.com) (Web Service)       | _Auto-deploy desligado_ — o deploy é acionado pelo job **deploy** do GitHub Actions via **Deploy Hook**. |
+| **Banco de Dados** | [Neon](https://neon.com) (PostgreSQL serverless) | Persiste os dados; a API conecta via `POSTGRES_*` com `POSTGRES_SSL=true`.                               |
 
-**Fluxo:** merge na `main` → CI passa (Lint, Tests, Build) → stage **Deploy** faz `curl` no Render Deploy Hook → o Render reconstrói e publica a nova versão.
+**Fluxo:** merge na `main` → job **ci** passa (Lint, Tests, Build) → job **deploy** faz `curl` no Render Deploy Hook → o Render reconstrói e publica a nova versão.
 
 ---
 
