@@ -54,20 +54,52 @@ jobs:
       - name: Build
         run: npm run build
 
-  deploy:
-    name: Deploy to Render
+  docker-validate:
+    name: Validate Docker Compose Stack
+    runs-on: ubuntu-latest
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Trigger Render deploy hook
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Start containers
+        run: docker compose up -d --build
+
+      - name: Wait for containers to be healthy
         run: |
-          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK secret is not configured"
-            exit 1
-          fi
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK"
-          echo "Deploy triggered, will be available on Render shortly"
+          set -e
+          services=$(docker compose config --services)
+          for service in $services; do
+            cid=$(docker compose ps -q "$service")
+            if [ -z "$cid" ]; then
+              echo "::error::Service '$service' has no running container"
+              exit 1
+            fi
+
+            has_healthcheck=$(docker inspect --format='{{if .State.Health}}yes{{else}}no{{end}}' "$cid")
+
+            if [ "$has_healthcheck" = "no" ]; then
+              echo "::warning::Service '$service' has no healthcheck defined in docker-compose.yml. Consider adding one so this check verifies readiness, not just that the process started."
+              status=$(docker inspect --format='{{.State.Status}}' "$cid")
+              if [ "$status" != "running" ]; then
+                echo "::error::Service '$service' is not running (status: $status)"
+                docker compose logs "$service"
+                exit 1
+              fi
+              continue
+            fi
+
+            echo "Waiting for '$service' to become healthy..."
+            timeout 60s bash -c "until [ \"\$(docker inspect --format='{{.State.Health.Status}}' $cid)\" = 'healthy' ]; do sleep 2; done" || {
+              echo "::error::Service '$service' did not become healthy in time"
+              docker compose logs "$service"
+              exit 1
+            }
+            echo "'$service' is healthy."
+          done
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
