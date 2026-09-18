@@ -93,8 +93,8 @@ describe('Criterion 1 – user with active slot session cannot open a gambit', (
         return Promise.resolve({ UserId: 'user-1', ChipBalance: 1000 } as User);
       return Promise.resolve(null);
     });
-    managerMock.create.mockReturnValue({ GambitSessionId: 1 } as GambitSession);
-    managerMock.save.mockResolvedValue({ GambitSessionId: 1 } as GambitSession);
+    managerMock.create.mockReturnValue({ GambitSessionId: 1 });
+    managerMock.save.mockResolvedValue({ GambitSessionId: 1 });
     managerMock.insert.mockRejectedValue({ code: '23505' });
 
     const mockRepo = {
@@ -157,8 +157,8 @@ describe('Criterion 2 – concurrent session-start: 23505 becomes ConflictExcept
     const qrMock = makeQueryRunnerMock(managerMock);
 
     managerMock.findOne.mockResolvedValue(null);
-    managerMock.create.mockReturnValue({ GambitSessionId: 1 } as GambitSession);
-    managerMock.save.mockResolvedValue({ GambitSessionId: 1 } as GambitSession);
+    managerMock.create.mockReturnValue({ GambitSessionId: 1 });
+    managerMock.save.mockResolvedValue({ GambitSessionId: 1 });
     managerMock.insert.mockResolvedValue(undefined);
 
     managerMock.findOne.mockImplementation((entity: unknown) => {
@@ -350,7 +350,7 @@ describe('Criterion 4 – gambit admin deactivate: credits Result when Result is
     CardsPurchased: 5,
     Result: 80,
     Status: GambitSessionStatus.InProgress,
-    GambitTable: { ...MockActiveGambitTable } as GambitTable,
+    GambitTable: { ...MockActiveGambitTable },
   } as GambitSession;
 
   let gambitTableService: GambitTableService;
@@ -429,7 +429,7 @@ describe('Criterion 5 – gambit admin deactivate: refunds CardsPurchased*CardPr
     CardsPurchased: 7,
     Result: null,
     Status: GambitSessionStatus.InProgress,
-    GambitTable: { ...MockActiveGambitTable, CardPrice: 10 } as GambitTable, // 7 * 10 = 70
+    GambitTable: { ...MockActiveGambitTable, CardPrice: 10 }, // 7 * 10 = 70
   } as GambitSession;
 
   let gambitTableService: GambitTableService;

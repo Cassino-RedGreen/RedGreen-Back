@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import {
   BadRequestException,
   ConflictException,
@@ -72,19 +72,18 @@ function MakeQRMock(Mgr: ReturnType<typeof MakeManagerMock>) {
   };
 }
 
-const BuildTable = (Overrides: Partial<GambitTable> = {}): GambitTable =>
-  ({
-    GambitTableId: 1,
-    Name: 'Test Table',
-    Description: 'test',
-    MinimumChipsRequired: 0,
-    CardPrice: 10,
-    TableMultiplier: 1,
-    MinimumCardsPurchased: 5,
-    MaxCardsPurchased: 20,
-    Active: true,
-    ...Overrides,
-  }) as GambitTable;
+const BuildTable = (Overrides: Partial<GambitTable> = {}): GambitTable => ({
+  GambitTableId: 1,
+  Name: 'Test Table',
+  Description: 'test',
+  MinimumChipsRequired: 0,
+  CardPrice: 10,
+  TableMultiplier: 1,
+  MinimumCardsPurchased: 5,
+  MaxCardsPurchased: 20,
+  Active: true,
+  ...Overrides,
+});
 
 const BuildSnapshot = (
   Overrides: Partial<CurrentGridSnapshot> = {}
@@ -162,19 +161,19 @@ describe('GambitSessionService', () => {
         GambitSessionService,
         {
           provide: getRepositoryToken(GambitSession),
-          useValue: MockRepo as unknown as Repository<GambitSession>,
+          useValue: MockRepo,
         },
         {
           provide: getRepositoryToken(GambitTable),
-          useValue: MockTableRepo as unknown as Repository<GambitTable>,
+          useValue: MockTableRepo,
         },
         {
           provide: DataSource,
-          useValue: MockDataSource as unknown as DataSource,
+          useValue: MockDataSource,
         },
         {
           provide: SessionRegistryService,
-          useValue: Registry as unknown as SessionRegistryService,
+          useValue: Registry,
         },
       ],
     }).compile();
