@@ -67,15 +67,15 @@ describe('GambitTableService', () => {
         GambitTableService,
         {
           provide: getRepositoryToken(GambitTable),
-          useValue: MockTableRepo as unknown as GambitTableRepoMock,
+          useValue: MockTableRepo,
         },
         {
           provide: getRepositoryToken(GambitSession),
-          useValue: MockSessionRepo as unknown as GambitSessionRepoMock,
+          useValue: MockSessionRepo,
         },
         {
           provide: DataSource,
-          useValue: { createQueryRunner: jest.fn() } as unknown as DataSource,
+          useValue: { createQueryRunner: jest.fn() },
         },
         {
           provide: SessionRegistryService,

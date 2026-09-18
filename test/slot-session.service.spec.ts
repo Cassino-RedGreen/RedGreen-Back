@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { SlotSessionService } from '../src/modules/slot-machine/sessions/application/slot-session.service';
 import {
@@ -135,19 +135,19 @@ describe('SlotSessionService', () => {
         SlotSessionService,
         {
           provide: getRepositoryToken(SlotSession),
-          useValue: MockSlotSessionRepo as unknown as Repository<SlotSession>,
+          useValue: MockSlotSessionRepo,
         },
         {
           provide: DataSource,
-          useValue: MockDataSource as unknown as DataSource,
+          useValue: MockDataSource,
         },
         {
           provide: AuthService,
-          useValue: MockAuthService as unknown as AuthService,
+          useValue: MockAuthService,
         },
         {
           provide: SlotMachineService,
-          useValue: MockSlotMachineService as unknown as SlotMachineService,
+          useValue: MockSlotMachineService,
         },
         {
           provide: SessionRegistryService,
@@ -624,7 +624,7 @@ describe('SlotSessionService', () => {
       const NoRerolls = {
         ...MockSessionForReroll,
         CurrentRerollsSpent: { Rerolls: { Max: 5, Used: 5 } },
-      } as unknown as SlotSession;
+      };
       setupRerollMocks(NoRerolls);
 
       await expect(Service.reroll(1, 1, 0, 'user1')).rejects.toThrow(
@@ -637,7 +637,7 @@ describe('SlotSessionService', () => {
       const InactiveSession = {
         ...MockSessionForReroll,
         Status: SlotSessionStatus.Finished,
-      } as unknown as SlotSession;
+      };
       setupRerollMocks(InactiveSession);
 
       await expect(Service.reroll(1, 1, 0, 'user1')).rejects.toThrow(
