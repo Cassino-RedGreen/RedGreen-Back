@@ -1,0 +1,275 @@
+{
+  "info": {
+    "_postman_id": "20b614a5-6d93-43d7-8916-5bc93352b48e",
+    "name": "RedGreen API Tests",
+    "description": "Automated API tests for RedGreen using Postman/Newman.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "TC-001 - Usuario sem cadastro nao consegue jogar",
+      "description": "Fluxo TC-001: visitante sem cadastro/autenticacao tenta iniciar uma partida de Slot, recebe 401 Unauthorized e nao recebe dados de uma partida iniciada. Nao faz cadastro nem login e nao depende do TC-002. Limite da verificacao: a API nao permite comprovar a ausencia de persistencia anonimamente. GET /slot-machines/{slotMachineId}/sessions, GET /sessions/active e GET /sessions/me/active exigem JWT e consultam o UserId autenticado; GET /slot-machines/{slotMachineId}/sessions/{id} tambem exige AdminGuard. SlotSession possui SlotSessionId gerado e UserId obrigatorio; ActiveSession vincula UserId a ReferenceId. Nao existe consulta publica por tentativa anonima. Um GET retornando 401 ou a ausencia de dados na resposta do POST nao prova que o banco ficou inalterado, portanto nenhuma consulta artificial foi adicionada. Swagger /api-json declara Bearer nesta rota, mas documenta apenas a resposta 201; o contrato 401 foi confirmado na implementacao JwtAuthGuard/Passport e na resposta HTTP real.",
+      "item": [
+        {
+          "name": "TC-001 - POST attempt to start Slot game without JWT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const expectedStatus = 401;",
+                  "let responseJson;",
+                  "",
+                  "// No Auth is configured on the request. Runtime auth metadata may be absent; check the Authorization header instead.",
+                  "pm.test('TC-001 - request does not send Authorization header', function () {",
+                  "  pm.expect(pm.request.headers.get('Authorization')).to.be.oneOf([undefined, null]);",
+                  "});",
+                  "",
+                  "pm.test('TC-001 - backend rejects unauthenticated game start', function () {",
+                  "  pm.response.to.have.status(expectedStatus);",
+                  "});",
+                  "",
+                  "pm.test('TC-001 - error response matches implemented Unauthorized format', function () {",
+                  "  pm.response.to.have.header('Content-Type');",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "  responseJson = pm.response.json();",
+                  "  pm.expect(responseJson).to.be.an('object');",
+                  "  pm.expect(responseJson).to.deep.equal({ message: 'Unauthorized', statusCode: expectedStatus });",
+                  "});",
+                  "",
+                  "// Response checks only: these do not prove absence of database writes.",
+                  "pm.test('TC-001 - response contains no started session or game state', function () {",
+                  "  responseJson = responseJson || pm.response.json();",
+                  "  pm.expect(pm.response.code).to.not.be.oneOf([200, 201]);",
+                  "  pm.expect(responseJson).to.not.have.property('session');",
+                  "  pm.expect(responseJson).to.not.have.property('currentBalance');",
+                  "  pm.expect(responseJson).to.not.have.property('SlotSessionId');",
+                  "  pm.expect(responseJson).to.not.have.property('ActiveSessionId');",
+                  "  pm.expect(responseJson).to.not.have.property('CurrentSpinResult');",
+                  "  pm.expect(responseJson).to.not.have.property('CurrentRewardSnapshot');",
+                  "});",
+                  "",
+                  "pm.test('TC-001 - response does not advertise a created resource', function () {",
+                  "  pm.expect(pm.response.headers.get('Location')).to.be.oneOf([undefined, null]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/slot-machines/{{slotMachineId}}/sessions",
+              "host": ["{{baseUrl}}"],
+              "path": ["slot-machines", "{{slotMachineId}}", "sessions"]
+            },
+            "description": "Tenta iniciar uma partida via POST /slot-machines/{slotMachineId}/sessions com corpo {} e auth noauth, sem cadastrar usuario nem fazer login. Espera o erro real { message: 'Unauthorized', statusCode: 401 }, sem dados de jogo nem Location. As verificacoes descrevem somente a resposta HTTP; nao afirmam que a ausencia de persistencia foi comprovada. Consulte a descricao do TC-001 para as limitacoes das rotas de consulta existentes."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "TC-002 - Usuario comum nao pode utilizar funcoes restritas",
+      "description": "Verifies that a valid regular user JWT cannot execute administrator-only operations.",
+      "item": [
+        {
+          "name": "TC-002 - Regular user cannot create gambit table",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function resolveRequest(serialized) {",
+                  "  const request = JSON.parse(pm.variables.replaceIn(serialized));",
+                  "  request.url = request.url.raw;",
+                  "  return request;",
+                  "}",
+                  "",
+                  "const suffix = `${Date.now()}${Math.floor(Math.random() * 100000)}`;",
+                  "pm.environment.set('tc002UserName', `TC002 Regular User ${suffix}`);",
+                  "pm.environment.set('tc002UserEmail', `tc002.regular.${suffix}@example.test`);",
+                  "pm.environment.set('tc002UserNickname', `tc002regular${suffix}`);",
+                  "pm.environment.set('tc002UserPassword', 'Tc002Password123!');",
+                  "pm.environment.set('tc002GambitTableName', `TC002 Unauthorized Gambit Table ${suffix}`);",
+                  "pm.environment.unset('tc002RegularUserToken');",
+                  "",
+                  "// Requests are sequential: registration must succeed before login.",
+                  "function stopSetup(stage, error) {",
+                  "  pm.environment.unset('tc002RegularUserToken');",
+                  "  pm.test('TC-002 - ' + stage + ' setup succeeds', function () {",
+                  "    throw new Error(error.message || String(error));",
+                  "  });",
+                  "  pm.execution.skipRequest();",
+                  "}",
+                  "pm.sendRequest(resolveRequest(\"{\\\"auth\\\":{\\\"type\\\":\\\"noauth\\\"},\\\"method\\\":\\\"POST\\\",\\\"header\\\":[{\\\"key\\\":\\\"Content-Type\\\",\\\"value\\\":\\\"application/json\\\"}],\\\"body\\\":{\\\"mode\\\":\\\"raw\\\",\\\"raw\\\":\\\"{\\\\n  \\\\\\\"Name\\\\\\\": \\\\\\\"{{tc002UserName}}\\\\\\\",\\\\n  \\\\\\\"BirthDate\\\\\\\": \\\\\\\"1995-01-01\\\\\\\",\\\\n  \\\\\\\"Nickname\\\\\\\": \\\\\\\"{{tc002UserNickname}}\\\\\\\",\\\\n  \\\\\\\"Email\\\\\\\": \\\\\\\"{{tc002UserEmail}}\\\\\\\",\\\\n  \\\\\\\"Password\\\\\\\": \\\\\\\"{{tc002UserPassword}}\\\\\\\"\\\\n}\\\",\\\"options\\\":{\\\"raw\\\":{\\\"language\\\":\\\"json\\\"}}},\\\"url\\\":{\\\"raw\\\":\\\"{{baseUrl}}/auth/register\\\",\\\"host\\\":[\\\"{{baseUrl}}\\\"],\\\"path\\\":[\\\"auth\\\",\\\"register\\\"]},\\\"description\\\":\\\"Creates an isolated regular user for TC-002 with unique generated email and nickname.\\\"}\"), function (error, response) {",
+                  "  if (error) { stopSetup('registration', error); return; }",
+                  "  let responseJson;",
+                  "",
+                  "pm.test('TC-002 - regular user registration succeeds', function () {",
+                  "  pm.expect(response.code).to.eql(201);",
+                  "  responseJson = response.json();",
+                  "  pm.expect(responseJson).to.have.property('User');",
+                  "  pm.expect(responseJson.User).to.have.property('Email', pm.environment.get('tc002UserEmail'));",
+                  "});",
+                  "",
+                  "pm.test('TC-002 - created user is not an administrator', function () {",
+                  "  responseJson = responseJson || response.json();",
+                  "  pm.expect(responseJson.User).to.have.property('UserType', 'User');",
+                  "  pm.expect(responseJson.User.UserType).to.not.eql('Admin');",
+                  "});",
+                  "  let user;",
+                  "  try { user = response.json().User; } catch (error) { stopSetup('registration', error); return; }",
+                  "  if (response.code !== 201 || !user || user.UserType !== 'User' || user.Email !== pm.environment.get('tc002UserEmail')) {",
+                  "    stopSetup('registration', new Error('Expected a newly registered regular user')); return;",
+                  "  }",
+                  "  pm.sendRequest(resolveRequest(\"{\\\"auth\\\":{\\\"type\\\":\\\"noauth\\\"},\\\"method\\\":\\\"POST\\\",\\\"header\\\":[{\\\"key\\\":\\\"Content-Type\\\",\\\"value\\\":\\\"application/json\\\"}],\\\"body\\\":{\\\"mode\\\":\\\"raw\\\",\\\"raw\\\":\\\"{\\\\n  \\\\\\\"Email\\\\\\\": \\\\\\\"{{tc002UserEmail}}\\\\\\\",\\\\n  \\\\\\\"Password\\\\\\\": \\\\\\\"{{tc002UserPassword}}\\\\\\\"\\\\n}\\\",\\\"options\\\":{\\\"raw\\\":{\\\"language\\\":\\\"json\\\"}}},\\\"url\\\":{\\\"raw\\\":\\\"{{baseUrl}}/auth/login\\\",\\\"host\\\":[\\\"{{baseUrl}}\\\"],\\\"path\\\":[\\\"auth\\\",\\\"login\\\"]},\\\"description\\\":\\\"Authenticates the generated regular user and stores the JWT for the admin-only request.\\\"}\"), function (error, response) {",
+                  "    if (error) { stopSetup('login', error); return; }",
+                  "    let responseJson;",
+                  "",
+                  "pm.test('TC-002 - regular user login succeeds', function () {",
+                  "  pm.expect(response.code).to.eql(200);",
+                  "  responseJson = response.json();",
+                  "  pm.expect(responseJson).to.have.property('User');",
+                  "  pm.expect(responseJson.User).to.have.property('Email', pm.environment.get('tc002UserEmail'));",
+                  "  pm.expect(responseJson.User).to.have.property('UserType', 'User');",
+                  "});",
+                  "",
+                  "pm.test('TC-002 - login returns a valid-looking JWT', function () {",
+                  "  responseJson = responseJson || response.json();",
+                  "  pm.expect(responseJson).to.have.property('Token');",
+                  "  pm.expect(responseJson.Token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(responseJson.Token.split('.')).to.have.length(3);",
+                  "  pm.environment.set('tc002RegularUserToken', responseJson.Token);",
+                  "});",
+                  "    let result;",
+                  "    try { result = response.json(); } catch (error) { stopSetup('login', error); return; }",
+                  "    if (response.code !== 200 || !result.User || result.User.UserType !== 'User' || result.User.Email !== pm.environment.get('tc002UserEmail') || typeof result.Token !== 'string' || result.Token.split('.').length !== 3) {",
+                  "      stopSetup('login', new Error('Expected the regular user and a JWT')); return;",
+                  "    }",
+                  "    pm.environment.set('tc002RegularUserToken', result.Token);",
+                  "  });",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function resolveRequest(serialized) {",
+                  "  const request = JSON.parse(pm.variables.replaceIn(serialized));",
+                  "  request.url = request.url.raw;",
+                  "  return request;",
+                  "}",
+                  "",
+                  "const expectedStatus = 401;",
+                  "let responseJson;",
+                  "",
+                  "pm.test('TC-002 - admin request is configured with the regular user JWT', function () {",
+                  "  const token = pm.environment.get('tc002RegularUserToken');",
+                  "  pm.expect(token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(token.split('.')).to.have.length(3);",
+                  "  pm.expect(pm.variables.replaceIn(pm.request.headers.get('Authorization'))).to.eql('Bearer ' + token);",
+                  "});",
+                  "",
+                  "pm.test('TC-002 - backend rejects regular user for admin-only operation', function () {",
+                  "  pm.response.to.have.status(expectedStatus);",
+                  "});",
+                  "",
+                  "pm.test('TC-002 - error response matches implemented AdminGuard format', function () {",
+                  "  pm.response.to.have.header('Content-Type');",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "  responseJson = pm.response.json();",
+                  "  pm.expect(responseJson).to.be.an('object');",
+                  "  pm.expect(responseJson).to.have.property('statusCode', expectedStatus);",
+                  "  pm.expect(responseJson).to.have.property('message', 'Admin access required');",
+                  "  pm.expect(responseJson).to.have.property('error', 'Unauthorized');",
+                  "});",
+                  "",
+                  "pm.test('TC-002 - admin operation was not accepted as a created table', function () {",
+                  "  responseJson = responseJson || pm.response.json();",
+                  "  pm.expect(pm.response.code).to.not.be.oneOf([200, 201]);",
+                  "  pm.expect(responseJson).to.not.have.property('GambitTableId');",
+                  "  pm.expect(responseJson).to.not.have.property('Active');",
+                  "});",
+                  "",
+                  "// Verify persisted public state after the rejected administrative operation.",
+                  "pm.sendRequest(resolveRequest(\"{\\\"auth\\\":{\\\"type\\\":\\\"noauth\\\"},\\\"method\\\":\\\"GET\\\",\\\"header\\\":[],\\\"url\\\":{\\\"raw\\\":\\\"{{baseUrl}}/gambit-table\\\",\\\"host\\\":[\\\"{{baseUrl}}\\\"],\\\"path\\\":[\\\"gambit-table\\\"]},\\\"description\\\":\\\"Checks the public Gambit table list to confirm the rejected admin operation had no side effect.\\\"}\"), function (error, response) {",
+                  "  pm.test('TC-002 - verification request completes', function () {",
+                  "    pm.expect(error).to.not.exist;",
+                  "  });",
+                  "  if (error) return;",
+                  "  pm.test('TC-002 - gambit table list is readable for verification', function () {",
+                  "  pm.expect(response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "pm.test('TC-002 - unauthorized admin operation did not create a table', function () {",
+                  "  const responseJson = response.json();",
+                  "  const attemptedName = pm.environment.get('tc002GambitTableName');",
+                  "  pm.expect(responseJson).to.be.an('array');",
+                  "  pm.expect(responseJson.some((table) => table.Name === attemptedName)).to.eql(false);",
+                  "});",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tc002RegularUserToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Name\": \"{{tc002GambitTableName}}\",\n  \"Description\": \"TC-002 unauthorized admin operation attempt\",\n  \"MinimumChipsRequired\": 0,\n  \"CardPrice\": 10,\n  \"TableMultiplier\": 1,\n  \"MinimumCardsPurchased\": 1,\n  \"MaxCardsPurchased\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/gambit-table",
+              "host": ["{{baseUrl}}"],
+              "path": ["gambit-table"]
+            },
+            "description": "Fluxo completo TC-002 em um item: Pre-request cadastra um usuario comum e faz login sequencialmente via pm.sendRequest; o POST principal tenta criar a mesa com o JWT recebido; Post-response verifica a rejeicao e consulta GET /gambit-table para confirmar que a mesa nao aparece na lista. A preparacao interrompe a requisicao principal se cadastro ou login falhar. Cria um usuario de teste por execucao, sem limpeza automatica."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
