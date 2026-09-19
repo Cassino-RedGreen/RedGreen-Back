@@ -12,7 +12,7 @@ async function run() {
     require('./redgreen.local.postman_environment.json')
   );
   const baseUrl =
-    process.env.TC003_BASE_URL ||
+    process.env.TC005_BASE_URL ||
     environment.values.find((v) => v.key === 'baseUrl').value;
   const host = process.env.POSTGRES_HOST || 'localhost';
   const localHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
@@ -21,7 +21,7 @@ async function run() {
     !localHosts.includes(host)
   ) {
     throw new Error(
-      'TC-003 automatic fixture preparation requires a local API and PostgreSQL.'
+      'TC-005 automatic fixture preparation requires a local API and PostgreSQL.'
     );
   }
   for (const key of ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB']) {
@@ -36,17 +36,21 @@ async function run() {
     connectionTimeoutMillis: 10000,
   });
   const suffix = randomUUID();
-  const email = `tc003.${suffix}@example.test`;
-  const nickname = `tc003${suffix}`;
+  const email = `tc005.${suffix}@example.test`;
+  const nickname = `tc005${suffix}`;
   const password = randomBytes(24).toString('base64url');
-  const tableName = `TC003 Admin Table ${suffix}`;
+  const tableName = `TC005 Slot Machine ${suffix}`;
+  const userEmails = [
+    `tc005.a.${suffix}@example.test`,
+    `tc005.b.${suffix}@example.test`,
+  ];
   await db.connect();
   try {
     const registration = await fetch(`${baseUrl}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        Name: 'TC003 Test Administrator',
+        Name: 'TC005 Test Administrator',
         BirthDate: '1995-01-01',
         Nickname: nickname,
         Email: email,
@@ -69,13 +73,15 @@ async function run() {
       );
     }
     console.log(
-      'TC-003: temporary administrator prepared; credentials stay in memory.'
+      'TC-005: temporary administrator prepared; credentials stay in memory.'
     );
     const values = {
       baseUrl,
-      tc003AdminEmail: email,
-      tc003AdminPassword: password,
-      tc003GambitTableName: tableName,
+      tc005AdminEmail: email,
+      tc005AdminPassword: password,
+      tc005SlotMachineName: tableName,
+      tc005UserAEmail: userEmails[0],
+      tc005UserBEmail: userEmails[1],
     };
     for (const [key, value] of Object.entries(values)) {
       const entry = environment.values.find((v) => v.key === key);
@@ -87,7 +93,7 @@ async function run() {
         {
           collection: require('./redgreen-api.postman_collection.json'),
           environment,
-          folder: 'TC-003 - Administrador pode utilizar funcoes restritas',
+          folder: 'TC-005 - Usuario nao pode utilizar sessao de outro usuario',
           reporters: ['cli'],
           timeoutRequest: 15000,
           timeoutScript: 30000,
@@ -95,9 +101,9 @@ async function run() {
         (error, summary) => {
           if (error) return reject(error);
           if (summary.run.failures.length)
-            return reject(new Error('TC-003 assertions or requests failed.'));
-          if (summary.run.stats.assertions.total < 10)
-            return reject(new Error('TC-003 did not complete all checks.'));
+            return reject(new Error('TC-005 assertions or requests failed.'));
+          if (summary.run.stats.assertions.total < 27)
+            return reject(new Error('TC-005 did not complete all checks.'));
           resolveRun();
         }
       );
@@ -105,7 +111,18 @@ async function run() {
   } finally {
     try {
       await db.query('BEGIN');
-      await db.query('DELETE FROM "GambitTable" WHERE "Name" = $1', [
+      await db.query(
+        'DELETE FROM "ActiveSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = ANY($1::text[]))',
+        [userEmails]
+      );
+      await db.query(
+        'DELETE FROM "SlotSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = ANY($1::text[]))',
+        [userEmails]
+      );
+      await db.query('DELETE FROM "User" WHERE "Email" = ANY($1::text[])', [
+        userEmails,
+      ]);
+      await db.query('DELETE FROM "SlotMachine" WHERE "Name" = $1', [
         tableName,
       ]);
       await db.query(
@@ -113,7 +130,7 @@ async function run() {
         [email, nickname]
       );
       await db.query('COMMIT');
-      console.log('TC-003: temporary table and user removed.');
+      console.log('TC-005: temporary sessions, machine and users removed.');
     } catch (error) {
       await db.query('ROLLBACK');
       throw error;
