@@ -270,6 +270,136 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "TC-003 - Administrador pode utilizar funcoes restritas",
+      "description": "Administrador autentica, cria uma mesa Gambit e consulta o ID retornado para comprovar persistencia. Um unico item com login em Pre-request e consulta em Post-response. Preparacao automatica local e limpeza: npm run test:api:tc003. Cadastro publico nao atribui Admin; o executor prepara esse perfil no banco apenas para seu usuario temporario. Execucao direta no Postman exige credenciais de administrador de testes no ambiente e deixa a mesa criada.",
+      "item": [
+        {
+          "name": "TC-003 - Administrator can create gambit table",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.unset('tc003AdminToken');",
+                  "pm.variables.unset('tc003ExpectedTable');",
+                  "const email = pm.environment.get('tc003AdminEmail');",
+                  "const password = pm.environment.get('tc003AdminPassword');",
+                  "function stopSetup(error) {",
+                  "  pm.test('TC-003 - administrator setup succeeds', function () { throw error; });",
+                  "  pm.execution.skipRequest();",
+                  "}",
+                  "if (!email || !password) {",
+                  "  stopSetup(new Error('Provide test administrator credentials or run npm run test:api:tc003 for automatic local preparation.'));",
+                  "} else {",
+                  "  const name = pm.environment.get('tc003GambitTableName') || ('TC003 Admin Table ' + pm.variables.replaceIn('{{$guid}}'));",
+                  "  const table = { Name: name, Description: 'TC-003 administrative access test', MinimumChipsRequired: 0, CardPrice: 10, TableMultiplier: 1, MinimumCardsPurchased: 5, MaxCardsPurchased: 20 };",
+                  "  pm.variables.set('tc003ExpectedTable', JSON.stringify(table));",
+                  "  pm.sendRequest({",
+                  "    url: pm.environment.get('baseUrl') + '/auth/login',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json' },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ Email: email, Password: password }) }",
+                  "  }, function (error, response) {",
+                  "    if (error) { stopSetup(new Error('Administrator login request failed')); return; }",
+                  "    pm.test('TC-003 - administrator login returns 200', function () { pm.expect(response.code).to.eql(200); });",
+                  "    let data;",
+                  "    try { data = response.json(); } catch (error) { stopSetup(error); return; }",
+                  "    pm.test('TC-003 - authenticated user is the active administrator', function () {",
+                  "      pm.expect(data.User.Email).to.eql(email);",
+                  "      pm.expect(data.User.UserType).to.eql('Admin');",
+                  "      pm.expect(data.User.Active).to.eql(true);",
+                  "      pm.expect(data.User.UserId).to.be.a('string').and.not.empty;",
+                  "    });",
+                  "    pm.test('TC-003 - login supplies a JWT', function () {",
+                  "      pm.expect(data.Token).to.be.a('string').and.not.empty;",
+                  "      pm.expect(data.Token.split('.')).to.have.length(3);",
+                  "    });",
+                  "    // Only the API can establish token validity; successful protected creation checks it below.",
+                  "    if (response.code !== 200 || !data.User || data.User.Email !== email || data.User.UserType !== 'Admin' || !data.User.Active || typeof data.Token !== 'string' || data.Token.split('.').length !== 3) {",
+                  "      stopSetup(new Error('Login must authenticate an active administrator and return a JWT')); return;",
+                  "    }",
+                  "    pm.variables.set('tc003AdminToken', data.Token);",
+                  "  });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const expected = JSON.parse(pm.variables.get('tc003ExpectedTable'));",
+                  "pm.test('TC-003 - request sends the administrator JWT', function () {",
+                  "  const token = pm.variables.get('tc003AdminToken');",
+                  "  pm.expect(token).to.be.a('string').and.not.empty;",
+                  "  pm.expect(pm.variables.replaceIn(pm.request.headers.get('Authorization'))).to.eql('Bearer ' + token);",
+                  "});",
+                  "pm.test('TC-003 - administrative creation returns 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('TC-003 - creation returns JSON', function () {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "});",
+                  "const created = pm.response.json();",
+                  "pm.test('TC-003 - created table matches submitted fields and is active', function () {",
+                  "  pm.expect(created).to.include(expected);",
+                  "  pm.expect(created.Active).to.eql(true);",
+                  "});",
+                  "pm.test('TC-003 - created table has a generated positive integer ID', function () {",
+                  "  pm.expect(Number.isInteger(created.GambitTableId)).to.eql(true);",
+                  "  pm.expect(created.GambitTableId).to.be.above(0);",
+                  "});",
+                  "if (pm.response.code === 201 && Number.isInteger(created.GambitTableId) && created.GambitTableId > 0) {",
+                  "  pm.sendRequest({ url: pm.environment.get('baseUrl') + '/gambit-table/' + created.GambitTableId, method: 'GET' }, function (error, response) {",
+                  "    pm.test('TC-003 - created table can be retrieved through the API', function () {",
+                  "      pm.expect(error).to.not.exist;",
+                  "      pm.expect(response.code).to.eql(200);",
+                  "    });",
+                  "    if (error) return;",
+                  "    pm.test('TC-003 - persisted table matches the created table', function () {",
+                  "      const persisted = response.json();",
+                  "      pm.expect(persisted).to.include(expected);",
+                  "      pm.expect(persisted.GambitTableId).to.eql(created.GambitTableId);",
+                  "      pm.expect(persisted.Active).to.eql(true);",
+                  "    });",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tc003AdminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{tc003ExpectedTable}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/gambit-table",
+            "description": "POST restrito pelo AdminGuard. Espera 201, ID gerado e todos os campos enviados; GET /gambit-table/{Id} confirma persistencia. O JWT e obtido por login real e enviado explicitamente no cabecalho Authorization."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }
