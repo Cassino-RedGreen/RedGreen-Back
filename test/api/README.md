@@ -1,4 +1,47 @@
-# TC-003 — Administrador pode utilizar funções restritas
+# Testes de API — TC-003 e TC-004
+
+## TC-004 — Bônus diário somente uma vez por dia
+
+Com o backend e PostgreSQL disponíveis, execute:
+
+```sh
+npm run test:api:tc004
+```
+
+No Postman, reimporte a coleção, selecione o ambiente local e clique em Send
+no único item TC-004. Não precisa de credenciais preparadas nem executor CJS:
+o Pre-request gera dados únicos, cadastra um usuário por `/auth/register`,
+faz login por `/auth/login` e mantém senha/JWT somente em memória.
+
+O fluxo usa nove chamadas HTTP reais: cadastro, login, saldo inicial
+(`GET /user/chips`), primeiro `POST /user/daily-login`, saldo após o crédito,
+perfil (`GET /user/profile`), segundo POST idêntico com o mesmo JWT, saldo
+final e perfil final. A segunda tentativa é a requisição principal do item.
+
+As 12 assertions verificam cadastro novo sem resgate anterior, login,
+formato do JWT, saldo inicial, primeiro crédito, sua persistência, data e
+sequência diária, autenticação da segunda chamada, status da repetição,
+recompensa zero, saldo final e manutenção da data/seqüência no perfil.
+Para o usuário novo, a regra de `AuthService.CheckDailyLogin` determina
+sequência 1 e recompensa `min(sequência, 7) * 50`, portanto 50 fichas.
+O saldo deve evoluir de 0 para 50 e permanecer 50.
+
+O backend recusa o **novo crédito**, mas não retorna erro HTTP: ambas as
+tentativas respondem **201**, conforme o Swagger. A segunda retorna
+`FirstLoginToday: false`, `Reward: 0`, `DailyStreak: 1` e saldo inalterado.
+Não há mensagem de erro a validar. O Swagger não detalha esse corpo;
+as assertions seguem a implementação e as respostas reais.
+
+O dia é determinado pelo fuso local do servidor. As tentativas são sequenciais
+e devem ocorrer sem atravessar a meia-noite do servidor; se o dia mudar e
+houver um segundo crédito válido, o teste falhará em vez de ignorá-lo.
+Nenhum relógio é alterado. A data persistida do primeiro resgate deve
+permanecer idêntica após a repetição. Este teste não cobre resgates concorrentes.
+
+Cada execução deixa seu usuário exclusivo no banco, seguindo o TC-002.
+O cenário não depende de nenhum outro teste nem altera regras do backend.
+
+## TC-003 — Administrador pode utilizar funções restritas
 
 Na mesma coleção dos TC-001/TC-002, o TC-003 aparece como um único item.
 O script Pre-request faz `POST /auth/login`; a requisição principal faz

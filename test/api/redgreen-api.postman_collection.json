@@ -400,6 +400,167 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia",
+      "description": "Um unico item. Pre-request cadastra usuario unico, faz login, consulta saldo, resgata bonus e confirma persistencia. POST principal repete exatamente a operacao com o mesmo JWT; Post-response confirma Reward 0 e saldo/data/streak inalterados. Ambas as tentativas retornam 201: a recusa do segundo credito e FirstLoginToday false, nao um erro HTTP. Dia definido pelo fuso local do servidor em CheckDailyLogin; execucao deve ocorrer sem atravessar meia-noite do servidor. Credenciais geradas somente em memoria. Usuario criado permanece no banco, como no TC-002. Independente de outros casos; nao cobre concorrencia.",
+      "item": [
+        {
+          "name": "TC-004 - Daily bonus cannot be credited twice on the same day",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "async function callApi(method, path, body, token) {",
+                  "  const header = { 'Content-Type': 'application/json' };",
+                  "  if (token) header.Authorization = 'Bearer ' + token;",
+                  "  const request = { method, url: pm.environment.get('baseUrl') + path, header };",
+                  "  if (body !== undefined) request.body = { mode: 'raw', raw: JSON.stringify(body) };",
+                  "  return new Promise((resolve, reject) => pm.sendRequest(request, (error, response) => error ? reject(error) : resolve(response)));",
+                  "}",
+                  "function check(name, assertion) {",
+                  "  let failure;",
+                  "  pm.test('TC-004 - ' + name, function () {",
+                  "    try { assertion(); } catch (error) { failure = error; throw error; }",
+                  "  });",
+                  "  if (failure) throw failure;",
+                  "}",
+                  "",
+                  "(async function () {",
+                  "  for (const key of ['tc004Token', 'tc004InitialBalance', 'tc004FirstBalance', 'tc004LastLoginDate', 'tc004UserId']) pm.variables.unset(key);",
+                  "  const suffix = pm.variables.replaceIn('{{$guid}}');",
+                  "  const email = 'tc004.' + suffix + '@example.test';",
+                  "  const password = pm.variables.replaceIn('{{$guid}}') + 'Aa1!';",
+                  "  const registered = await callApi('POST', '/auth/register', { Name: 'TC004 Daily Bonus User', BirthDate: '1995-01-01', Nickname: 'tc004' + suffix, Email: email, Password: password });",
+                  "  check('fresh user is registered with no previous daily claim', () => {",
+                  "    pm.expect(registered.code).to.eql(201);",
+                  "    const user = registered.json().User;",
+                  "    pm.expect(user.Email).to.eql(email);",
+                  "    pm.expect(user.UserType).to.eql('User');",
+                  "    pm.expect(user.DailyLoginStreak).to.eql(0);",
+                  "    pm.expect(user.LastLoginDate).to.be.oneOf([null, undefined]);",
+                  "  });",
+                  "  const login = await callApi('POST', '/auth/login', { Email: email, Password: password });",
+                  "  check('login authenticates the newly registered user', () => {",
+                  "    pm.expect(login.code).to.eql(200);",
+                  "    pm.expect(login.json().User.UserId).to.eql(registered.json().User.UserId);",
+                  "    pm.expect(login.json().User.Email).to.eql(email);",
+                  "  });",
+                  "  const token = login.json().Token;",
+                  "  check('login returns a JWT', () => {",
+                  "    pm.expect(token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(token.split('.')).to.have.length(3);",
+                  "  });",
+                  "  pm.variables.set('tc004Token', token);",
+                  "  pm.variables.set('tc004UserId', login.json().User.UserId);",
+                  "  const initialResponse = await callApi('GET', '/user/chips', undefined, token);",
+                  "  check('initial balance is read through the authenticated API', () => {",
+                  "    pm.expect(initialResponse.code).to.eql(200);",
+                  "    pm.expect(initialResponse.json().ChipBalance).to.eql(0);",
+                  "  });",
+                  "  const initial = initialResponse.json().ChipBalance;",
+                  "  pm.variables.set('tc004InitialBalance', initial);",
+                  "  const first = await callApi('POST', '/user/daily-login', undefined, token);",
+                  "  // AuthService.CheckDailyLogin: a fresh user starts at streak 1; reward = min(streak, 7) * 50.",
+                  "  const expectedReward = 1 * 50;",
+                  "  check('first daily claim returns 201 and credits the day-one reward', () => {",
+                  "    pm.expect(first.code).to.eql(201);",
+                  "    pm.expect(first.json()).to.deep.equal({ FirstLoginToday: true, DailyStreak: 1, Reward: expectedReward, ChipBalance: initial + expectedReward });",
+                  "  });",
+                  "  const afterFirst = await callApi('GET', '/user/chips', undefined, token);",
+                  "  check('first reward is persisted in the balance', () => {",
+                  "    pm.expect(afterFirst.code).to.eql(200);",
+                  "    pm.expect(afterFirst.json().ChipBalance).to.eql(initial + expectedReward);",
+                  "  });",
+                  "  pm.variables.set('tc004FirstBalance', afterFirst.json().ChipBalance);",
+                  "  const profile = await callApi('GET', '/user/profile', undefined, token);",
+                  "  check('first claim persists its date and streak for the same user', () => {",
+                  "    pm.expect(profile.code).to.eql(200);",
+                  "    pm.expect(profile.json().UserId).to.eql(pm.variables.get('tc004UserId'));",
+                  "    pm.expect(profile.json().DailyLoginStreak).to.eql(1);",
+                  "    pm.expect(profile.json().LastLoginDate).to.be.a('string').and.not.empty;",
+                  "    pm.expect(Number.isFinite(Date.parse(profile.json().LastLoginDate))).to.eql(true);",
+                  "  });",
+                  "  pm.variables.set('tc004LastLoginDate', profile.json().LastLoginDate);",
+                  "})().catch(error => {",
+                  "  pm.test('TC-004 - preparation completes', () => { throw error; });",
+                  "  pm.execution.skipRequest();",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "async function callApi(method, path, body, token) {",
+                  "  const header = { 'Content-Type': 'application/json' };",
+                  "  if (token) header.Authorization = 'Bearer ' + token;",
+                  "  const request = { method, url: pm.environment.get('baseUrl') + path, header };",
+                  "  if (body !== undefined) request.body = { mode: 'raw', raw: JSON.stringify(body) };",
+                  "  return new Promise((resolve, reject) => pm.sendRequest(request, (error, response) => error ? reject(error) : resolve(response)));",
+                  "}",
+                  "function check(name, assertion) {",
+                  "  let failure;",
+                  "  pm.test('TC-004 - ' + name, function () {",
+                  "    try { assertion(); } catch (error) { failure = error; throw error; }",
+                  "  });",
+                  "  if (failure) throw failure;",
+                  "}",
+                  "",
+                  "(async function () {",
+                  "  const token = pm.variables.get('tc004Token');",
+                  "  const firstBalance = Number(pm.variables.get('tc004FirstBalance'));",
+                  "  check('second claim uses the same authenticated context', () => {",
+                  "    pm.expect(token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(pm.variables.replaceIn(pm.request.headers.get('Authorization'))).to.eql('Bearer ' + token);",
+                  "  });",
+                  "  check('second claim returns the implemented 201 status', () => { pm.response.to.have.status(201); });",
+                  "  check('backend recognizes a same-day repeat and grants zero reward', () => {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    pm.expect(pm.response.json()).to.deep.equal({ FirstLoginToday: false, DailyStreak: 1, Reward: 0, ChipBalance: firstBalance });",
+                  "  });",
+                  "  const finalBalance = await callApi('GET', '/user/chips', undefined, token);",
+                  "  check('persisted balance contains exactly one daily reward', () => {",
+                  "    pm.expect(finalBalance.code).to.eql(200);",
+                  "    pm.expect(finalBalance.json().ChipBalance).to.eql(firstBalance);",
+                  "    pm.expect(finalBalance.json().ChipBalance - Number(pm.variables.get('tc004InitialBalance'))).to.eql(50);",
+                  "  });",
+                  "  const finalProfile = await callApi('GET', '/user/profile', undefined, token);",
+                  "  check('repeat leaves the persisted claim date and streak unchanged', () => {",
+                  "    pm.expect(finalProfile.code).to.eql(200);",
+                  "    pm.expect(finalProfile.json().UserId).to.eql(pm.variables.get('tc004UserId'));",
+                  "    pm.expect(finalProfile.json().LastLoginDate).to.eql(pm.variables.get('tc004LastLoginDate'));",
+                  "    pm.expect(finalProfile.json().DailyLoginStreak).to.eql(1);",
+                  "    pm.expect(finalProfile.json().ChipBalance).to.eql(firstBalance);",
+                  "  });",
+                  "})().catch(error => {",
+                  "  pm.test('TC-004 - daily bonus verification completes', () => { throw error; });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tc004Token}}"
+              }
+            ],
+            "url": "{{baseUrl}}/user/daily-login",
+            "description": "Segunda tentativa de resgate, sem body como a primeira. Espera 201, FirstLoginToday false e Reward 0. A consulta posterior do saldo comprova ausencia de novo credito."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }
