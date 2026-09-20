@@ -25,7 +25,9 @@
     "test:api:tc002": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-002 - Regular user cannot use restricted functions\"",
     "test:api:tc003": "node test/api/run-tc003.cjs",
     "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Daily bonus cannot be claimed more than once per day\"",
-    "test:api:tc005": "node test/api/run-tc005.cjs"
+    "test:api:tc005": "node test/api/run-tc005.cjs",
+    "postinstall": "node scripts/patch-newman.cjs",
+    "test:tooling": "node --test test/tooling/newman-compat.test.cjs"
   },
   "lint-staged": {
     "*.ts": [
@@ -78,7 +80,7 @@
     "husky": "^9.1.7",
     "jest": "^30.5.1",
     "lint-staged": "^16.4.0",
-    "newman": "^6.2.2",
+    "newman": "6.2.2",
     "prettier": "^3.9.7",
     "source-map-support": "^0.5.21",
     "supertest": "^7.2.2",
@@ -105,6 +107,17 @@
     },
     "minimatch@9.0.9": {
       "brace-expansion": "^2.1.7"
+    },
+    "newman": {
+      "flatted": "3.4.2",
+      "handlebars": "4.7.9",
+      "jose": "4.15.9",
+      "lodash": "4.18.1",
+      "node-forge": "1.4.0",
+      "underscore": "1.13.8",
+      "uuid": "11.1.1",
+      "@faker-js/faker": "10.6.0",
+      "csv-parse": "7.0.2"
     }
   },
   "jest": {
