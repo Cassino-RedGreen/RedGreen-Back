@@ -1,21 +1,21 @@
-const { spawn } = require('node:child_process');
+const { spawn: Spawn } = require('node:child_process');
 const {
-  mkdirSync,
-  openSync,
-  closeSync,
-  readFileSync,
-  writeFileSync,
+  mkdirSync: MkdirSync,
+  openSync: OpenSync,
+  closeSync: CloseSync,
+  readFileSync: ReadFileSync,
+  writeFileSync: WriteFileSync,
 } = require('node:fs');
-const { resolve, join } = require('node:path');
-const { scripts } = require('../package.json');
+const { resolve: Resolve, join: Join } = require('node:path');
+const { scripts: Scripts } = require('../package.json');
 
-const root = resolve(__dirname, '..');
-const reportDir = join(
-  root,
+const Root = Resolve(__dirname, '..');
+const ReportDir = Join(
+  Root,
   'test-results',
   new Date().toISOString().replace(/[:.]/g, '-')
 );
-const categories = {
+const Categories = {
   iterations: 'iterations',
   requests: 'requests',
   'test-scripts': 'testScripts',
@@ -23,132 +23,139 @@ const categories = {
   assertions: 'assertions',
 };
 
-function runScenario(script) {
-  return new Promise((resolveRun) => {
-    const name = script.replace(/:/g, '-');
-    const report = join(reportDir, `${name}.json`);
-    const log = `${name}.log`;
-    const fd = openSync(join(reportDir, log), 'w');
-    const args = [process.env.npm_execpath, 'run', script];
-    if (scripts[script].startsWith('newman ')) {
-      args.push(
+function RunScenario(Script) {
+  return new Promise((ResolveRun) => {
+    const Name = Script.replace(/:/g, '-');
+    const Report = Join(ReportDir, `${Name}.json`);
+    const Log = `${Name}.log`;
+    const Fd = OpenSync(Join(ReportDir, Log), 'w');
+    const Args = [process.env.npm_execpath, 'run', Script];
+    if (Scripts[Script].startsWith('newman ')) {
+      Args.push(
         '--',
         '--reporters',
         'cli,json',
         '--reporter-json-export',
-        report
+        Report
       );
     }
-    const child = spawn(process.execPath, args, {
-      cwd: root,
+    const Child = Spawn(process.execPath, Args, {
+      cwd: Root,
       env: {
         ...process.env,
         CI: 'true',
         FORCE_COLOR: '0',
-        TEST_CASE_REPORT: report,
+        TEST_CASE_REPORT: Report,
       },
-      stdio: ['ignore', fd, fd],
+      stdio: ['ignore', Fd, Fd],
     });
-    let error;
-    child.on('error', (cause) => {
-      error = cause.message;
+    let ErrorObject;
+    Child.on('error', (Cause) => {
+      ErrorObject = Cause.message;
     });
-    child.on('close', (exitCode, signal) => {
-      closeSync(fd);
-      resolveRun({ script, report, log, exitCode, signal, error });
+    Child.on('close', (ExitCode, Signal) => {
+      CloseSync(Fd);
+      ResolveRun({
+        script: Script,
+        report: Report,
+        log: Log,
+        exitCode: ExitCode,
+        signal: Signal,
+        error: ErrorObject,
+      });
     });
   });
 }
 
-function printTable(totals) {
-  const widths = [19, 12, 12];
-  const border = (left, middle, right) =>
-    left + widths.map((width) => '─'.repeat(width)).join(middle) + right;
-  const row = (values) =>
+function PrintTable(Totals) {
+  const Widths = [19, 12, 12];
+  const Border = (Left, Middle, Right) =>
+    Left + Widths.map((Width) => '─'.repeat(Width)).join(Middle) + Right;
+  const Row = (Values) =>
     '│' +
-    values
-      .map((value, index) => String(value).padStart(widths[index] - 1) + ' ')
-      .join('│') +
+    Values.map(
+      (Value, Index) => String(Value).padStart(Widths[Index] - 1) + ' '
+    ).join('│') +
     '│';
-  console.log(border('┌', '┬', '┐'));
-  console.log(row(['', 'executed', 'failed']));
-  for (const [name, stats] of Object.entries(totals)) {
-    console.log(border('├', '┼', '┤'));
-    console.log(row([name, stats.executed, stats.failed]));
+  console.log(Border('┌', '┬', '┐'));
+  console.log(Row(['', 'executed', 'failed']));
+  for (const [Name, Stats] of Object.entries(Totals)) {
+    console.log(Border('├', '┼', '┤'));
+    console.log(Row([Name, Stats.executed, Stats.failed]));
   }
-  console.log(border('└', '┴', '┘'));
+  console.log(Border('└', '┴', '┘'));
 }
 
-async function main() {
+async function Main() {
   if (!process.env.npm_execpath)
     throw new Error('Execute com npm run test:all.');
-  const scenarios = Object.keys(scripts).filter((name) =>
-    name.startsWith('test:api:')
+  const Scenarios = Object.keys(Scripts).filter((Name) =>
+    Name.startsWith('test:api:')
   );
-  if (!scenarios.length)
+  if (!Scenarios.length)
     throw new Error('Nenhum cenario Newman/Postman encontrado.');
-  mkdirSync(reportDir, { recursive: true });
-  const totals = Object.fromEntries(
-    Object.keys(categories).map((name) => [name, { executed: 0, failed: 0 }])
+  MkdirSync(ReportDir, { recursive: true });
+  const Totals = Object.fromEntries(
+    Object.keys(Categories).map((Name) => [Name, { executed: 0, failed: 0 }])
   );
-  const results = [];
-  for (const script of scenarios) {
-    console.log(`Executando ${script}...`);
-    const result = await runScenario(script);
+  const Results = [];
+  for (const Script of Scenarios) {
+    console.log(`Executando ${Script}...`);
+    const Result = await RunScenario(Script);
     try {
-      const report = JSON.parse(readFileSync(result.report, 'utf8'));
+      const Report = JSON.parse(ReadFileSync(Result.report, 'utf8'));
       // Validate the whole report before adding any counts to the totals.
-      for (const key of Object.values(categories)) {
-        const stats = report.run?.stats?.[key];
+      for (const Key of Object.values(Categories)) {
+        const Stats = Report.run?.stats?.[Key];
         if (
-          !Number.isInteger(stats?.total) ||
-          !Number.isInteger(stats?.failed)
+          !Number.isInteger(Stats?.total) ||
+          !Number.isInteger(Stats?.failed)
         ) {
-          throw new Error(`Estatisticas Newman ausentes ou invalidas: ${key}`);
+          throw new Error(`Estatisticas Newman ausentes ou invalidas: ${Key}`);
         }
       }
-      for (const [name, key] of Object.entries(categories)) {
-        totals[name].executed += report.run.stats[key].total;
-        totals[name].failed += report.run.stats[key].failed;
+      for (const [Name, Key] of Object.entries(Categories)) {
+        Totals[Name].executed += Report.run.stats[Key].total;
+        Totals[Name].failed += Report.run.stats[Key].failed;
       }
-      result.failures = report.run.failures?.length || 0;
-    } catch (cause) {
-      result.error = [
-        result.error,
-        `Relatorio indisponivel/invalido: ${cause.message}`,
+      Result.failures = Report.run.failures?.length || 0;
+    } catch (Cause) {
+      Result.error = [
+        Result.error,
+        `Relatorio indisponivel/invalido: ${Cause.message}`,
       ]
         .filter(Boolean)
         .join('; ');
     }
-    results.push(result);
+    Results.push(Result);
   }
   console.log('\nTotal consolidado Newman/Postman:');
-  printTable(totals);
-  const failed = results.filter(
-    (result) => result.exitCode !== 0 || result.error || result.failures
+  PrintTable(Totals);
+  const Failed = Results.filter(
+    (Result) => Result.exitCode !== 0 || Result.error || Result.failures
   );
-  for (const result of failed) {
+  for (const Result of Failed) {
     console.error(
-      `${result.script}: FALHOU. ${result.error || 'Consulte o log para detalhes.'} Log: ${result.log}`
+      `${Result.script}: FALHOU. ${Result.error || 'Consulte o log para detalhes.'} Log: ${Result.log}`
     );
   }
-  if (results.some((result) => result.error)) {
+  if (Results.some((Result) => Result.error)) {
     console.error(
       'Totais parciais: cenarios sem relatorio valido nao foram somados.'
     );
   }
-  console.log(`Logs e summary.json: ${reportDir}`);
-  writeFileSync(
-    join(reportDir, 'summary.json'),
-    JSON.stringify({ totals, scenarios: results }, null, 2) + '\n'
+  console.log(`Logs e summary.json: ${ReportDir}`);
+  WriteFileSync(
+    Join(ReportDir, 'summary.json'),
+    JSON.stringify({ totals: Totals, scenarios: Results }, null, 2) + '\n'
   );
   process.exitCode =
-    failed.length || Object.values(totals).some((stats) => stats.failed > 0)
+    Failed.length || Object.values(Totals).some((Stats) => Stats.failed > 0)
       ? 1
       : 0;
 }
 
-main().catch((error) => {
-  console.error(error.message);
+Main().catch((ErrorObject) => {
+  console.error(ErrorObject.message);
   process.exitCode = 1;
 });
