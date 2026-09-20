@@ -225,6 +225,25 @@ O deploy é **disparado pela própria pipeline**, somente quando o CI passa na b
 
 ## Testes
 
+Execute todos os cenários automatizados Newman/Postman com um único comando:
+
+```bash
+npm run test:all
+```
+
+O comando executa apenas os cenários `test:api:*` em sequência, continuando mesmo
+quando um cenário falha. Ao final, soma as estatísticas dos relatórios Newman em
+uma única tabela com colunas `executed` e `failed` e linhas `iterations`,
+`requests`, `test-scripts`, `prerequest-scripts` e `assertions`.
+Testes Jest e de ferramentas não entram nessa execução.
+Os logs completos e o resumo `summary.json` ficam em `test-results/<execução>/`.
+O comando retorna código 1 se qualquer cenário falhar. Relatórios ausentes ou
+inválidos são informados como erro e os totais são identificados como parciais.
+
+Para os cenários de API, inicie previamente o PostgreSQL via Docker Compose e a
+API local, com o `.env` configurado. Os cenários TC-003 e TC-005 utilizam também
+acesso direto ao banco local.
+
 Os testes são escritos com **Jest** (unitários, com mocks de repositórios e transações — não exigem banco real).
 
 ```bash
