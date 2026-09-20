@@ -27,7 +27,8 @@
     "test:api:tc003": "node test/api/run-tc003.cjs",
     "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia\"",
     "test:api:tc005": "node test/api/run-tc005.cjs",
-    "test:api:tc011": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-011 - Bonus diario completa o saldo minimo e libera a sessao de slot\""
+    "test:api:tc011": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-011 - Bonus diario completa o saldo minimo e libera a sessao de slot\"",
+    "test:api:tc012": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-012 - Mesa so pode ser excluida depois do cash-out administrativo\""
   },
   "lint-staged": {
     "*.ts": [
