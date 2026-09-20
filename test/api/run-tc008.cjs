@@ -9,24 +9,12 @@ if (existsSync(envPath)) process.loadEnvFile(envPath);
 const ENVIRONMENT_PATH = resolve(__dirname, './redgreen.local.postman_environment.json');
 
 
-const ADMIN_EMAIL = 'admin.local@example.test';
-const ADMIN_PASSWORD = 'AdminLocalPass123!';
-const ADMIN_NICKNAME = 'adminlocal';
-const PLAYER_EMAIL = 'tc008.player.local@example.test';
-const PLAYER_PASSWORD = 'Tc008PlayerPass123!';
-const PLAYER_NICKNAME = 'tc008playerlocal';
-const SLOT_MACHINE_NAME = 'TC008 Slot Table (persistent)';
-const GAMBIT_TABLE_NAME = 'TC008 Gambit Table (persistent)';
-const SLOT_MINIMUM_SPIN_VALUE = 50;
-const SLOT_MINIMUM_CHIPS_REQUIRED = 100;
-const SLOT_MINIMUM_REROLL_VALUE = 20;
+const SLOT_MACHINE_NAME = 'Slot 1';
+const SLOT_MINIMUM_SPIN_VALUE = 10;
+const SLOT_MINIMUM_REROLL_VALUE = 5;
+const GAMBIT_TABLE_NAME = 'Gambit 1';
 const GAMBIT_CARD_PRICE = 10;
-const GAMBIT_MINIMUM_CHIPS_REQUIRED = 50;
-const GAMBIT_MINIMUM_CARDS_PURCHASED = 5;
-const GAMBIT_MAX_CARDS_PURCHASED = 20;
-const GAMBIT_CARDS_PURCHASED = GAMBIT_MINIMUM_CARDS_PURCHASED;
-const CHIP_BALANCE_TOP_UP_THRESHOLD = 1000;
-const CHIP_BALANCE_TOP_UP_TARGET = 100000;
+const GAMBIT_CARDS_PURCHASED = 5;
 
 function loadEnvironment() {
   return JSON.parse(readFileSync(ENVIRONMENT_PATH, 'utf8'));
@@ -42,194 +30,32 @@ function setVar(environment, key, value) {
   else environment.values.push({ key, value, enabled: true });
 }
 
-function getVar(environment, key) {
-  return environment.values.find((v) => v.key === key)?.value || '';
-}
-
-async function ensurePersistentAdmin(baseUrl, db) {
-  const login = await fetch(`${baseUrl}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Email: ADMIN_EMAIL, Password: ADMIN_PASSWORD }),
+async function requireSlotMachine(baseUrl) {
+  const list = await fetch(`${baseUrl}/slot/machine`, {
     signal: AbortSignal.timeout(15000),
   });
-  if (login.status === 200) {
-    const { User, Token } = await login.json();
-    if (User.UserType === 'Admin' && User.Active) {
-      return Token;
-    }
+  if (list.status === 200) {
+    const machines = await list.json();
+    const found = machines.find((m) => m.Name === SLOT_MACHINE_NAME && m.Active);
+    if (found) return String(found.SlotMachineId);
   }
-
-  const registration = await fetch(`${baseUrl}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      Name: 'Shared Persistent Test Administrator',
-      BirthDate: '1995-01-01',
-      Nickname: ADMIN_NICKNAME,
-      Email: ADMIN_EMAIL,
-      Password: ADMIN_PASSWORD,
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (registration.status !== 201) {
-    throw new Error(
-      `Could not create the shared persistent admin (status ${registration.status}).`
-    );
-  }
-  const { User: user } = await registration.json();
-
-  const promoted = await db.query(
-    'UPDATE "User" SET "UserType" = $1 WHERE "UserId" = $2 AND "Email" = $3 RETURNING "UserType"',
-    ['Admin', user.UserId, ADMIN_EMAIL]
+  throw new Error(
+    `Shared slot machine "${SLOT_MACHINE_NAME}" not found - create it manually first (see test/api/SHARED_SETUP.md).`
   );
-  if (promoted.rowCount !== 1 || promoted.rows[0].UserType !== 'Admin') {
-    throw new Error('Admin fixture not found in local DB after promotion.');
-  }
-
-  const secondLogin = await fetch(`${baseUrl}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Email: ADMIN_EMAIL, Password: ADMIN_PASSWORD }),
-    signal: AbortSignal.timeout(15000),
-  });
-  const { Token } = await secondLogin.json();
-  return Token;
 }
 
-async function ensurePersistentPlayer(baseUrl, db) {
-  const login = await fetch(`${baseUrl}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Email: PLAYER_EMAIL, Password: PLAYER_PASSWORD }),
+async function requireGambitTable(baseUrl) {
+  const list = await fetch(`${baseUrl}/gambit-table`, {
     signal: AbortSignal.timeout(15000),
   });
-  let userId;
-  if (login.status === 200) {
-    const { User } = await login.json();
-    userId = User.UserId;
-  } else {
-    const registration = await fetch(`${baseUrl}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        Name: 'TC008 Persistent Test Player',
-        BirthDate: '1995-01-01',
-        Nickname: PLAYER_NICKNAME,
-        Email: PLAYER_EMAIL,
-        Password: PLAYER_PASSWORD,
-        ChipBalance: CHIP_BALANCE_TOP_UP_TARGET,
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (registration.status !== 201) {
-      throw new Error(
-        `Could not create the persistent TC-008 player (status ${registration.status}).`
-      );
-    }
-    const { User: user } = await registration.json();
-    userId = user.UserId;
+  if (list.status === 200) {
+    const tables = await list.json();
+    const found = tables.find((t) => t.Name === GAMBIT_TABLE_NAME && t.Active);
+    if (found) return String(found.GambitTableId);
   }
-
-  const balance = await db.query(
-    'SELECT "ChipBalance" FROM "User" WHERE "UserId" = $1',
-    [userId]
+  throw new Error(
+    `Shared gambit table "${GAMBIT_TABLE_NAME}" not found - create it manually first (see test/api/SHARED_SETUP.md).`
   );
-  if (Number(balance.rows[0]?.ChipBalance) < CHIP_BALANCE_TOP_UP_THRESHOLD) {
-    await db.query('UPDATE "User" SET "ChipBalance" = $1 WHERE "UserId" = $2', [
-      CHIP_BALANCE_TOP_UP_TARGET,
-      userId,
-    ]);
-    console.log('TC-008: topped up the persistent player balance.');
-  }
-
-  const leftover = await db.query(
-    'SELECT "GameType" FROM "ActiveSession" WHERE "UserId" = $1',
-    [userId]
-  );
-  if (leftover.rowCount > 0) {
-    await db.query('DELETE FROM "ActiveSession" WHERE "UserId" = $1', [userId]);
-    console.log(
-      `TC-008: cleared a leftover ${leftover.rows[0].GameType} session from a previous run.`
-    );
-  }
-}
-
-async function ensurePersistentSlotMachine(baseUrl, adminToken, environment) {
-  const storedId = getVar(environment, 'tc008SlotMachineId');
-  if (storedId) {
-    const check = await fetch(`${baseUrl}/slot/machine/${storedId}`, {
-      signal: AbortSignal.timeout(15000),
-    });
-    if (check.status === 200) {
-      const machine = await check.json();
-      if (machine.Active) return storedId;
-    }
-  }
-
-  const creation = await fetch(`${baseUrl}/slot/machine`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
-    },
-    body: JSON.stringify({
-      Name: SLOT_MACHINE_NAME,
-      Description: 'Persistent dedicated table for TC-008 (run-tc008.cjs)',
-      MinimumSpinValue: SLOT_MINIMUM_SPIN_VALUE,
-      MinimumChipsRequired: SLOT_MINIMUM_CHIPS_REQUIRED,
-      MinimumRerollValue: SLOT_MINIMUM_REROLL_VALUE,
-      TableColor: 'White',
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (creation.status !== 201) {
-    throw new Error(
-      `Could not create the persistent TC-008 slot machine (status ${creation.status}).`
-    );
-  }
-  const machine = await creation.json();
-  console.log('TC-008: created a new persistent dedicated slot machine.');
-  return String(machine.SlotMachineId);
-}
-
-async function ensurePersistentGambitTable(baseUrl, adminToken, environment) {
-  const storedId = getVar(environment, 'tc008GambitTableId');
-  if (storedId) {
-    const check = await fetch(`${baseUrl}/gambit-table/${storedId}`, {
-      signal: AbortSignal.timeout(15000),
-    });
-    if (check.status === 200) {
-      const table = await check.json();
-      if (table.Active) return storedId;
-    }
-  }
-
-  const creation = await fetch(`${baseUrl}/gambit-table`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
-    },
-    body: JSON.stringify({
-      Name: GAMBIT_TABLE_NAME,
-      Description: 'Persistent dedicated table for TC-008 (run-tc008.cjs)',
-      MinimumChipsRequired: GAMBIT_MINIMUM_CHIPS_REQUIRED,
-      CardPrice: GAMBIT_CARD_PRICE,
-      TableMultiplier: 1,
-      MinimumCardsPurchased: GAMBIT_MINIMUM_CARDS_PURCHASED,
-      MaxCardsPurchased: GAMBIT_MAX_CARDS_PURCHASED,
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (creation.status !== 201) {
-    throw new Error(
-      `Could not create the persistent TC-008 gambit table (status ${creation.status}).`
-    );
-  }
-  const table = await creation.json();
-  console.log('TC-008: created a new persistent dedicated gambit table.');
-  return String(table.GambitTableId);
 }
 
 async function run() {
@@ -260,35 +86,21 @@ async function run() {
   });
 
   await db.connect();
+  let playerEmail;
   try {
-    const adminToken = await ensurePersistentAdmin(baseUrl, db);
-    await ensurePersistentPlayer(baseUrl, db);
-    const slotMachineId = await ensurePersistentSlotMachine(
-      baseUrl,
-      adminToken,
-      environment
-    );
-    const gambitTableId = await ensurePersistentGambitTable(
-      baseUrl,
-      adminToken,
-      environment
-    );
+    const slotMachineId = await requireSlotMachine(baseUrl);
+    const gambitTableId = await requireGambitTable(baseUrl);
 
     setVar(environment, 'baseUrl', baseUrl);
-    setVar(environment, 'adminEmail', ADMIN_EMAIL);
-    setVar(environment, 'adminPassword', ADMIN_PASSWORD);
-    setVar(environment, 'tc008PlayerEmail', PLAYER_EMAIL);
-    setVar(environment, 'tc008PlayerPassword', PLAYER_PASSWORD);
-    setVar(environment, 'tc008SlotMachineId', slotMachineId);
-    setVar(environment, 'tc008GambitTableId', gambitTableId);
     setVar(environment, 'tc008SlotMinimumSpinValue', String(SLOT_MINIMUM_SPIN_VALUE));
     setVar(environment, 'tc008SlotMinimumRerollValue', String(SLOT_MINIMUM_REROLL_VALUE));
     setVar(environment, 'tc008GambitCardPrice', String(GAMBIT_CARD_PRICE));
     setVar(environment, 'tc008GambitCardsPurchased', String(GAMBIT_CARDS_PURCHASED));
     saveEnvironment(environment);
     console.log(
-      'TC-008: environment saved to disk, so the Postman app can reuse the same player and tables.'
+      `TC-008: using the shared "${SLOT_MACHINE_NAME}" (#${slotMachineId}) and "${GAMBIT_TABLE_NAME}" (#${gambitTableId}) tables.`
     );
+
 
     await new Promise((resolveRun, reject) => {
       newman.run(
@@ -302,6 +114,13 @@ async function run() {
           timeoutScript: 30000,
         },
         (error, summary) => {
+          try {
+            playerEmail = summary?.environment
+              ?.toJSON()
+              ?.values?.find((v) => v.key === 'tc008PlayerEmail')?.value;
+          } catch {
+            playerEmail = undefined;
+          }
           if (error) return reject(error);
           if (summary.run.failures.length)
             return reject(new Error('TC-008 assertions or requests failed.'));
@@ -312,9 +131,30 @@ async function run() {
       );
     });
     console.log(
-      'TC-008: done. Both the Slot and Gambit sessions were fully closed, so the persistent player is ready for the next run (terminal or manual, in Postman).'
+      'TC-008: done. Both the Slot and Gambit sessions were fully closed, so the freshly created player will be removed below.'
     );
   } finally {
+    if (playerEmail) {
+      await db.query(
+        'DELETE FROM "ActiveSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
+        [playerEmail]
+      );
+      await db.query(
+        'DELETE FROM "SlotSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
+        [playerEmail]
+      );
+      await db.query(
+        'DELETE FROM "GambitSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
+        [playerEmail]
+      );
+      const removed = await db.query(
+        'DELETE FROM "User" WHERE "Email" = $1 RETURNING "Email"',
+        [playerEmail]
+      );
+      if (removed.rowCount === 1) {
+        console.log(`TC-008: removed the temporary player (${playerEmail}).`);
+      }
+    }
     await db.end();
   }
 }

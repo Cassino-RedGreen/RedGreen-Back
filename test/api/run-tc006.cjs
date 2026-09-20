@@ -10,10 +10,6 @@ if (existsSync(envPath)) process.loadEnvFile(envPath);
 const ENVIRONMENT_PATH = resolve(__dirname, './redgreen.local.postman_environment.json');
 
 
-const ADMIN_EMAIL = 'admin.local@example.test';
-const ADMIN_PASSWORD = 'AdminLocalPass123!';
-const ADMIN_NICKNAME = 'adminlocal';
-
 function loadEnvironment() {
   return JSON.parse(readFileSync(ENVIRONMENT_PATH, 'utf8'));
 }
@@ -28,48 +24,32 @@ function setVar(environment, key, value) {
   else environment.values.push({ key, value, enabled: true });
 }
 
-async function ensurePersistentAdmin(baseUrl, db) {
+
+async function requireSeededAdmin(baseUrl, environment) {
+  const email = environment.values.find((v) => v.key === 'adminEmail')?.value;
+  const password = environment.values.find((v) => v.key === 'adminPassword')?.value;
+  if (!email || !password) {
+    throw new Error(
+      'adminEmail/adminPassword not found in the environment - create the shared admin account manually first (see test/api/SHARED_SETUP.md).'
+    );
+  }
   const login = await fetch(`${baseUrl}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ Email: ADMIN_EMAIL, Password: ADMIN_PASSWORD }),
+    body: JSON.stringify({ Email: email, Password: password }),
     signal: AbortSignal.timeout(15000),
   });
-  if (login.status === 200) {
-    const { User } = await login.json();
-    if (User.UserType === 'Admin' && User.Active) {
-      console.log('TC-006: reusing the shared persistent local admin.');
-      return;
-    }
-  }
-
-  const registration = await fetch(`${baseUrl}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      Name: 'Shared Persistent Test Administrator',
-      BirthDate: '1995-01-01',
-      Nickname: ADMIN_NICKNAME,
-      Email: ADMIN_EMAIL,
-      Password: ADMIN_PASSWORD,
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (registration.status !== 201) {
+  if (login.status !== 200) {
     throw new Error(
-      `Could not create the shared persistent admin (status ${registration.status}). If the email is already taken by a non-admin account, remove it manually and re-run.`
+      `Login for the shared admin returned ${login.status} - create the shared admin account manually first (see test/api/SHARED_SETUP.md).`
     );
   }
-  const { User: user } = await registration.json();
-
-  const promoted = await db.query(
-    'UPDATE "User" SET "UserType" = $1 WHERE "UserId" = $2 AND "Email" = $3 RETURNING "UserType"',
-    ['Admin', user.UserId, ADMIN_EMAIL]
-  );
-  if (promoted.rowCount !== 1 || promoted.rows[0].UserType !== 'Admin') {
-    throw new Error('Admin fixture not found in local DB after promotion.');
+  const { User } = await login.json();
+  if (User.UserType !== 'Admin' || !User.Active) {
+    throw new Error(
+      'The shared account is not an active Admin - see test/api/SHARED_SETUP.md to fix it manually.'
+    );
   }
-  console.log('TC-006: created and promoted the shared persistent local admin.');
 }
 
 async function run() {
@@ -102,15 +82,13 @@ async function run() {
 
   await db.connect();
   try {
-    await ensurePersistentAdmin(baseUrl, db);
+    await requireSeededAdmin(baseUrl, environment);
 
     setVar(environment, 'baseUrl', baseUrl);
-    setVar(environment, 'adminEmail', ADMIN_EMAIL);
-    setVar(environment, 'adminPassword', ADMIN_PASSWORD);
     setVar(environment, 'tc006TableName', tableName);
     saveEnvironment(environment);
     console.log(
-      'TC-006: environment saved to disk, so the Postman app can reuse the same admin.'
+      'TC-006: environment saved to disk (table name only - the admin is a seed, not touched here).'
     );
 
     await new Promise((resolveRun, reject) => {
