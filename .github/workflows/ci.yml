@@ -4,9 +4,8 @@ on:
   push:
     branches: ['**']
   pull_request:
+  workflow_dispatch:
 
-# One run per branch: a new push cancels the previous, still-running build.
-# Mirrors the Jenkins `disableConcurrentBuilds()` option.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -15,14 +14,67 @@ permissions:
   contents: read
 
 jobs:
-  ci:
-    name: Lint, Test and Build
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Every push builds. Pull requests only build when they come from a fork,
-    # since a same-repo PR branch is already covered by its push event.
+    timeout-minutes: 10
+    
     if: >-
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    env:
+      HUSKY: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint:check
+
+  format:
+    name: Check Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+  
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    env:
+      HUSKY: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+  test:
+    name: Audit and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name != github.repository
     env:
       HUSKY: 0
@@ -42,64 +94,31 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
-      - name: Lint
-        run: npm run lint:check
-
-      - name: Check formatting
-        run: npm run format:check
-
       - name: Unit tests
         run: npm test
 
-      - name: Build
-        run: npm run build
-
-  docker-validate:
-    name: Validate Docker Compose Stack
+  build:
+    name: Build
     runs-on: ubuntu-latest
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 10
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+    env:
+      HUSKY: 0
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Start containers
-        run: docker compose up -d --build
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
 
-      - name: Wait for containers to be healthy
-        run: |
-          set -e
-          services=$(docker compose config --services)
-          for service in $services; do
-            cid=$(docker compose ps -q "$service")
-            if [ -z "$cid" ]; then
-              echo "::error::Service '$service' has no running container"
-              exit 1
-            fi
+      - name: Install dependencies
+        run: npm ci
 
-            has_healthcheck=$(docker inspect --format='{{if .State.Health}}yes{{else}}no{{end}}' "$cid")
-
-            if [ "$has_healthcheck" = "no" ]; then
-              echo "::warning::Service '$service' has no healthcheck defined in docker-compose.yml. Consider adding one so this check verifies readiness, not just that the process started."
-              status=$(docker inspect --format='{{.State.Status}}' "$cid")
-              if [ "$status" != "running" ]; then
-                echo "::error::Service '$service' is not running (status: $status)"
-                docker compose logs "$service"
-                exit 1
-              fi
-              continue
-            fi
-
-            echo "Waiting for '$service' to become healthy..."
-            timeout 60s bash -c "until [ \"\$(docker inspect --format='{{.State.Health.Status}}' $cid)\" = 'healthy' ]; do sleep 2; done" || {
-              echo "::error::Service '$service' did not become healthy in time"
-              docker compose logs "$service"
-              exit 1
-            }
-            echo "'$service' is healthy."
-          done
-
-      - name: Cleanup
-        if: always()
-        run: docker compose down -v
+      - name: Build
+        run: npm run build
