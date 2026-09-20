@@ -1,44 +1,44 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { createRequire } = require('node:module');
+const Fs = require('node:fs');
+const Path = require('node:path');
+const { createRequire: CreateRequire } = require('node:module');
 
-const rootRequire = createRequire(path.join(__dirname, '../package.json'));
-let newmanEntry;
+const RootRequire = CreateRequire(Path.join(__dirname, '../package.json'));
+let NewmanEntry;
 try {
-  newmanEntry = rootRequire.resolve('newman/package.json');
-} catch (error) {
-  if (error.code !== 'MODULE_NOT_FOUND') throw error;
+  NewmanEntry = RootRequire.resolve('newman/package.json');
+} catch (ErrorObject) {
+  if (ErrorObject.code !== 'MODULE_NOT_FOUND') throw ErrorObject;
   process.exit(0);
 }
-const newmanRequire = createRequire(newmanEntry);
-const collectionEntry = newmanRequire.resolve(
+const NewmanRequire = CreateRequire(NewmanEntry);
+const CollectionEntry = NewmanRequire.resolve(
   'postman-collection/package.json'
 );
-for (const [file, expected] of [
-  [newmanEntry, '6.2.2'],
-  [collectionEntry, '4.4.0'],
+for (const [File, Expected] of [
+  [NewmanEntry, '6.2.2'],
+  [CollectionEntry, '4.4.0'],
 ]) {
-  const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (pkg.version !== expected) {
+  const Package = JSON.parse(Fs.readFileSync(File, 'utf8'));
+  if (Package.version !== Expected) {
     throw new Error(
-      `Review Newman compatibility patches for ${pkg.name}@${pkg.version}`
+      `Review Newman compatibility patches for ${Package.name}@${Package.version}`
     );
   }
 }
 
-function patch(file, replacements) {
-  const original = fs.readFileSync(file, 'utf8');
-  let updated = original;
-  for (const [before, after] of replacements) {
-    if (updated.includes(before)) updated = updated.replaceAll(before, after);
-    else if (!updated.includes(after)) {
-      throw new Error(`Unexpected dependency source in ${file}: ${before}`);
+function Patch(File, Replacements) {
+  const Original = Fs.readFileSync(File, 'utf8');
+  let Updated = Original;
+  for (const [Before, After] of Replacements) {
+    if (Updated.includes(Before)) Updated = Updated.replaceAll(Before, After);
+    else if (!Updated.includes(After)) {
+      throw new Error(`Unexpected dependency source in ${File}: ${Before}`);
     }
   }
-  return { file, original, updated };
+  return { File, Original, Updated };
 }
 
-const fakerChanges = [
+const FakerChanges = [
   [
     "var faker = require('@faker-js/faker/locale/en'),",
     "var faker = require('@faker-js/faker/locale/en').faker,",
@@ -58,7 +58,7 @@ const fakerChanges = [
     'countryCode',
     'latitude',
     'longitude',
-  ].map((name) => [`faker.address.${name}`, `faker.location.${name}`]),
+  ].map((Name) => [`faker.address.${Name}`, `faker.location.${Name}`]),
   ['faker.commerce.color', 'faker.color.human'],
   ['faker.company.companyName', 'faker.company.name'],
   [
@@ -88,9 +88,9 @@ const fakerChanges = [
     'nature',
     'sports',
     'transport',
-  ].map((category) => [
-    `faker.image.${category}`,
-    `function () { return faker.image.urlLoremFlickr({ category: '${category}', width: 640, height: 480 }); }`,
+  ].map((Category) => [
+    `faker.image.${Category}`,
+    `function () { return faker.image.urlLoremFlickr({ category: '${Category}', width: 640, height: 480 }); }`,
   ]),
   ['faker.internet.userName', 'faker.internet.username'],
   ['faker.internet.color', 'faker.color.rgb'],
@@ -104,33 +104,33 @@ const fakerChanges = [
     'jobDescriptor',
     'jobArea',
     'jobType',
-  ].map((name) => [`faker.name.${name}`, `faker.person.${name}`]),
+  ].map((Name) => [`faker.name.${Name}`, `faker.person.${Name}`]),
   ['faker.datatype.uuid', 'faker.string.uuid'],
   ['faker.random.alphaNumeric', 'faker.string.alphanumeric'],
 ];
-const source = path.join(
-  path.dirname(collectionEntry),
+const Source = Path.join(
+  Path.dirname(CollectionEntry),
   'lib/superstring/dynamic-variables.js'
 );
-const newline = fs.readFileSync(source, 'utf8').includes('\r\n')
+const Newline = Fs.readFileSync(Source, 'utf8').includes('\r\n')
   ? '\r\n'
   : '\n';
-const patches = [
-  patch(path.join(path.dirname(newmanEntry), 'lib/run/options.js'), [
+const Patches = [
+  Patch(Path.join(Path.dirname(NewmanEntry), 'lib/run/options.js'), [
     [
       "parseCsv = require('csv-parse'),",
       "parseCsv = require('csv-parse').parse,",
     ],
     ['relax: true,', 'relax_quotes: true,'],
   ]),
-  patch(
-    source,
-    fakerChanges.map((pair) =>
-      pair.map((text) => text.replaceAll('\r\n', newline))
+  Patch(
+    Source,
+    FakerChanges.map((Pair) =>
+      Pair.map((Text) => Text.replaceAll('\r\n', Newline))
     )
   ),
 ];
-for (const { file, original, updated } of patches) {
-  if (original !== updated) fs.writeFileSync(file, updated);
+for (const { File, Original, Updated } of Patches) {
+  if (Original !== Updated) Fs.writeFileSync(File, Updated);
 }
 console.log('Newman compatibility patches verified (csv-parse 7 / Faker 10).');
