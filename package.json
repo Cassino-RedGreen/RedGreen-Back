@@ -30,6 +30,7 @@
     "test:api:tc007": "node test/api/run-tc007.cjs",
     "test:api:tc008": "node test/api/run-tc008.cjs",
     "test:api:tc009": "node test/api/run-tc009.cjs",
+    "test:api:tc010": "node test/api/run-tc010.cjs",
     "test:api": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json -r cli,htmlextra --reporter-htmlextra-export test/api/reports/report.html"
   },
   "lint-staged": {
