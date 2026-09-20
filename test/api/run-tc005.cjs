@@ -1,146 +1,114 @@
-const { randomUUID, randomBytes } = require('node:crypto');
-const { resolve } = require('node:path');
-const { existsSync } = require('node:fs');
+const { randomUUID: RandomUUID } = require('node:crypto');
+const { resolve: Resolve } = require('node:path');
+const { existsSync: ExistsSync } = require('node:fs');
 const { Client } = require('pg');
-const newman = require('newman');
+const Newman = require('newman');
 
-const envPath = resolve(__dirname, '../../.env');
-if (existsSync(envPath)) process.loadEnvFile(envPath);
+const EnvPath = Resolve(__dirname, '../../.env');
+if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
 
-async function run() {
-  const environment = structuredClone(
+async function Run() {
+  const Environment = structuredClone(
     require('./redgreen.local.postman_environment.json')
   );
-  const baseUrl =
+  const BaseUrl =
     process.env.TC005_BASE_URL ||
-    environment.values.find((v) => v.key === 'baseUrl').value;
-  const host = process.env.POSTGRES_HOST || 'localhost';
-  const localHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+    Environment.values.find((V) => V.key === 'baseUrl').value;
+  const Host = process.env.POSTGRES_HOST || 'localhost';
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
   if (
-    !localHosts.includes(new URL(baseUrl).hostname) ||
-    !localHosts.includes(host)
+    !LocalHosts.includes(new URL(BaseUrl).hostname) ||
+    !LocalHosts.includes(Host)
   ) {
     throw new Error(
       'TC-005 automatic fixture preparation requires a local API and PostgreSQL.'
     );
   }
-  for (const key of ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB']) {
-    if (!process.env[key]) throw new Error(`Missing ${key}`);
+  for (const Key of ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB']) {
+    if (!process.env[Key]) throw new Error(`Missing ${Key}`);
   }
-  const db = new Client({
-    host,
+  const Db = new Client({
+    host: Host,
     port: Number(process.env.POSTGRES_PORT || 5433),
     user: process.env.POSTGRES_USER,
     password: process.env.POSTGRES_PASSWORD,
     database: process.env.POSTGRES_DB,
     connectionTimeoutMillis: 10000,
   });
-  const suffix = randomUUID();
-  const email = `tc005.${suffix}@example.test`;
-  const nickname = `tc005${suffix}`;
-  const password = randomBytes(24).toString('base64url');
-  const tableName = `TC005 Slot Machine ${suffix}`;
-  const userEmails = [
-    `tc005.a.${suffix}@example.test`,
-    `tc005.b.${suffix}@example.test`,
+  const Suffix = RandomUUID();
+  const Email = 'admin@admin.com';
+  const Password = 'admin123';
+  const TableName = `TC005 Slot Machine ${Suffix}`;
+  const UserEmails = [
+    `tc005.a.${Suffix}@example.test`,
+    `tc005.b.${Suffix}@example.test`,
   ];
-  await db.connect();
+  await Db.connect();
   try {
-    const registration = await fetch(`${baseUrl}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        Name: 'TC005 Test Administrator',
-        BirthDate: '1995-01-01',
-        Nickname: nickname,
-        Email: email,
-        Password: password,
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (registration.status !== 201)
-      throw new Error(`Fixture registration returned ${registration.status}`);
-    const { User: user } = await registration.json();
-    if (!user || user.Email !== email || user.UserType !== 'User')
-      throw new Error('Unexpected registered fixture user');
-    const promoted = await db.query(
-      'UPDATE "User" SET "UserType" = $1 WHERE "UserId" = $2 AND "Email" = $3 AND "Nickname" = $4 RETURNING "UserType"',
-      ['Admin', user.UserId, email, nickname]
-    );
-    if (promoted.rowCount !== 1 || promoted.rows[0].UserType !== 'Admin') {
-      throw new Error(
-        'Admin fixture not found in local DB; check that API and runner use the same database.'
-      );
-    }
-    console.log(
-      'TC-005: temporary administrator prepared; credentials stay in memory.'
-    );
-    const values = {
-      baseUrl,
-      tc005AdminEmail: email,
-      tc005AdminPassword: password,
-      tc005SlotMachineName: tableName,
-      tc005UserAEmail: userEmails[0],
-      tc005UserBEmail: userEmails[1],
+    console.log('TC-005: using seeded local administrator.');
+    const Values = {
+      baseUrl: BaseUrl,
+      tc005AdminEmail: Email,
+      tc005AdminPassword: Password,
+      tc005SlotMachineName: TableName,
+      tc005UserAEmail: UserEmails[0],
+      tc005UserBEmail: UserEmails[1],
     };
-    for (const [key, value] of Object.entries(values)) {
-      const entry = environment.values.find((v) => v.key === key);
-      if (entry) Object.assign(entry, { value, enabled: true });
-      else environment.values.push({ key, value, enabled: true });
+    for (const [Key, Value] of Object.entries(Values)) {
+      const Entry = Environment.values.find((V) => V.key === Key);
+      if (Entry) Object.assign(Entry, { value: Value, enabled: true });
+      else Environment.values.push({ key: Key, value: Value, enabled: true });
     }
-    await new Promise((resolveRun, reject) => {
-      newman.run(
+    await new Promise((ResolveRun, Reject) => {
+      Newman.run(
         {
           collection: require('./redgreen-api.postman_collection.json'),
-          environment,
-          folder: 'TC-005 - Usuario nao pode utilizar sessao de outro usuario',
-          reporters: ['cli'],
+          environment: Environment,
+          folder: 'TC-005 - User cannot use a session owned by another user',
+          reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
+          reporter: { json: { export: process.env.TEST_CASE_REPORT } },
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },
-        (error, summary) => {
-          if (error) return reject(error);
-          if (summary.run.failures.length)
-            return reject(new Error('TC-005 assertions or requests failed.'));
-          if (summary.run.stats.assertions.total < 27)
-            return reject(new Error('TC-005 did not complete all checks.'));
-          resolveRun();
+        (ErrorObject, Summary) => {
+          if (ErrorObject) return Reject(ErrorObject);
+          if (Summary.run.failures.length)
+            return Reject(new Error('TC-005 assertions or requests failed.'));
+          if (Summary.run.stats.assertions.total < 27)
+            return Reject(new Error('TC-005 did not complete all checks.'));
+          ResolveRun();
         }
       );
     });
   } finally {
     try {
-      await db.query('BEGIN');
-      await db.query(
+      await Db.query('BEGIN');
+      await Db.query(
         'DELETE FROM "ActiveSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = ANY($1::text[]))',
-        [userEmails]
+        [UserEmails]
       );
-      await db.query(
+      await Db.query(
         'DELETE FROM "SlotSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = ANY($1::text[]))',
-        [userEmails]
+        [UserEmails]
       );
-      await db.query('DELETE FROM "User" WHERE "Email" = ANY($1::text[])', [
-        userEmails,
+      await Db.query('DELETE FROM "User" WHERE "Email" = ANY($1::text[])', [
+        UserEmails,
       ]);
-      await db.query('DELETE FROM "SlotMachine" WHERE "Name" = $1', [
-        tableName,
+      await Db.query('DELETE FROM "SlotMachine" WHERE "Name" = $1', [
+        TableName,
       ]);
-      await db.query(
-        'DELETE FROM "User" WHERE "Email" = $1 AND "Nickname" = $2',
-        [email, nickname]
-      );
-      await db.query('COMMIT');
+      await Db.query('COMMIT');
       console.log('TC-005: temporary sessions, machine and users removed.');
-    } catch (error) {
-      await db.query('ROLLBACK');
-      throw error;
+    } catch (ErrorObject) {
+      await Db.query('ROLLBACK');
+      throw ErrorObject;
     } finally {
-      await db.end();
+      await Db.end();
     }
   }
 }
 
-run().catch((error) => {
-  console.error(error.message);
+Run().catch((ErrorObject) => {
+  console.error(ErrorObject.message);
   process.exitCode = 1;
 });

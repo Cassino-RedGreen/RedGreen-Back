@@ -30,6 +30,7 @@ pids
 
 # Coverage directory used by tools like istanbul
 coverage/
+test-results/
 .nyc_output
 
 # nyc test coverage
