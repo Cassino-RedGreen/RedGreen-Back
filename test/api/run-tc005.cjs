@@ -1,4 +1,4 @@
-const { randomUUID, randomBytes } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
 const { resolve } = require('node:path');
 const { existsSync } = require('node:fs');
 const { Client } = require('pg');
@@ -36,9 +36,8 @@ async function run() {
     connectionTimeoutMillis: 10000,
   });
   const suffix = randomUUID();
-  const email = `tc005.${suffix}@example.test`;
-  const nickname = `tc005${suffix}`;
-  const password = randomBytes(24).toString('base64url');
+  const email = 'admin@admin.com';
+  const password = 'admin123';
   const tableName = `TC005 Slot Machine ${suffix}`;
   const userEmails = [
     `tc005.a.${suffix}@example.test`,
@@ -46,35 +45,7 @@ async function run() {
   ];
   await db.connect();
   try {
-    const registration = await fetch(`${baseUrl}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        Name: 'TC005 Test Administrator',
-        BirthDate: '1995-01-01',
-        Nickname: nickname,
-        Email: email,
-        Password: password,
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (registration.status !== 201)
-      throw new Error(`Fixture registration returned ${registration.status}`);
-    const { User: user } = await registration.json();
-    if (!user || user.Email !== email || user.UserType !== 'User')
-      throw new Error('Unexpected registered fixture user');
-    const promoted = await db.query(
-      'UPDATE "User" SET "UserType" = $1 WHERE "UserId" = $2 AND "Email" = $3 AND "Nickname" = $4 RETURNING "UserType"',
-      ['Admin', user.UserId, email, nickname]
-    );
-    if (promoted.rowCount !== 1 || promoted.rows[0].UserType !== 'Admin') {
-      throw new Error(
-        'Admin fixture not found in local DB; check that API and runner use the same database.'
-      );
-    }
-    console.log(
-      'TC-005: temporary administrator prepared; credentials stay in memory.'
-    );
+    console.log('TC-005: using seeded local administrator.');
     const values = {
       baseUrl,
       tc005AdminEmail: email,
@@ -125,10 +96,6 @@ async function run() {
       await db.query('DELETE FROM "SlotMachine" WHERE "Name" = $1', [
         tableName,
       ]);
-      await db.query(
-        'DELETE FROM "User" WHERE "Email" = $1 AND "Nickname" = $2',
-        [email, nickname]
-      );
       await db.query('COMMIT');
       console.log('TC-005: temporary sessions, machine and users removed.');
     } catch (error) {
