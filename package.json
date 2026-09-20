@@ -26,6 +26,7 @@
     "test:api:tc003": "node test/api/run-tc003.cjs",
     "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Daily bonus cannot be claimed more than once per day\"",
     "test:api:tc005": "node test/api/run-tc005.cjs",
+    "test:api": "npm run test:api:tc001 && npm run test:api:tc002 && npm run test:api:tc003 && npm run test:api:tc004 && npm run test:api:tc005",
     "postinstall": "node scripts/patch-newman.cjs",
     "test:tooling": "node --test test/tooling/newman-compat.test.cjs"
   },
