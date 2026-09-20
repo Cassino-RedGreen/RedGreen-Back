@@ -64,6 +64,7 @@ async function run() {
           Nickname: u.nickname,
           Email: u.email,
           Password: u.password,
+          ChipBalance: u.balance,
         }),
         signal: AbortSignal.timeout(15000),
       });
@@ -72,21 +73,14 @@ async function run() {
           `Fixture registration for ${u.label} returned ${registration.status}`
         );
       const { User: user } = await registration.json();
-      if (!user || user.Email !== u.email)
+      if (
+        !user ||
+        user.Email !== u.email ||
+        Number(user.ChipBalance) !== u.balance
+      )
         throw new Error(`Unexpected registered fixture user ${u.label}`);
       u.userId = user.UserId;
       createdUserIds.push(user.UserId);
-
-      const updated = await db.query(
-        'UPDATE "User" SET "ChipBalance" = $1 WHERE "UserId" = $2 AND "Email" = $3 RETURNING "ChipBalance"',
-        [u.balance, user.UserId, u.email]
-      );
-      if (
-        updated.rowCount !== 1 ||
-        Number(updated.rows[0].ChipBalance) !== u.balance
-      ) {
-        throw new Error(`Failed to set known ChipBalance for ${u.label}`);
-      }
     }
 
     console.log(
