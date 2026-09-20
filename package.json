@@ -25,7 +25,11 @@
     "test:api:tc002": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-002 - Usuario comum nao pode utilizar funcoes restritas\"",
     "test:api:tc003": "node test/api/run-tc003.cjs",
     "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia\"",
-    "test:api:tc005": "node test/api/run-tc005.cjs"
+    "test:api:tc005": "node test/api/run-tc005.cjs",
+    "test:api:tc006": "node test/api/run-tc006.cjs",
+    "test:api:tc007": "node test/api/run-tc007.cjs",
+    "test:api:tc008": "node test/api/run-tc008.cjs",
+    "test:api:tc009": "node test/api/run-tc009.cjs"
   },
   "lint-staged": {
     "*.ts": [
