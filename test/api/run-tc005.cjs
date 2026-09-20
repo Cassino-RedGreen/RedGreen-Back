@@ -93,7 +93,7 @@ async function run() {
         {
           collection: require('./redgreen-api.postman_collection.json'),
           environment,
-          folder: 'TC-005 - Usuario nao pode utilizar sessao de outro usuario',
+          folder: 'TC-005 - User cannot use a session owned by another user',
           reporters: ['cli'],
           timeoutRequest: 15000,
           timeoutScript: 30000,

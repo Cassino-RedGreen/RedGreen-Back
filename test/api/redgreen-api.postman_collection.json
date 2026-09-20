@@ -6,7 +6,7 @@
   },
   "item": [
     {
-      "name": "TC-001 - Usuario sem cadastro nao consegue jogar",
+      "name": "TC-001 - Unregistered user cannot play",
       "item": [
         {
           "name": "TC-001 - POST attempt to start Slot game without JWT",
@@ -84,7 +84,7 @@
       ]
     },
     {
-      "name": "TC-002 - Usuario comum nao pode utilizar funcoes restritas",
+      "name": "TC-002 - Regular user cannot use restricted functions",
       "item": [
         {
           "name": "TC-002 - Regular user cannot create gambit table",
@@ -263,7 +263,7 @@
       ]
     },
     {
-      "name": "TC-003 - Administrador pode utilizar funcoes restritas",
+      "name": "TC-003 - Administrator can use restricted functions",
       "item": [
         {
           "name": "TC-003 - Administrator can create gambit table",
@@ -390,7 +390,7 @@
       ]
     },
     {
-      "name": "TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia",
+      "name": "TC-004 - Daily bonus cannot be claimed more than once per day",
       "item": [
         {
           "name": "TC-004 - Daily bonus cannot be credited twice on the same day",
@@ -548,7 +548,7 @@
       ]
     },
     {
-      "name": "TC-005 - Usuario nao pode utilizar sessao de outro usuario",
+      "name": "TC-005 - User cannot use a session owned by another user",
       "item": [
         {
           "name": "TC-005 - User B cannot cash out user A session",

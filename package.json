@@ -21,10 +21,10 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:api:tc001": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-001 - Usuario sem cadastro nao consegue jogar\"",
-    "test:api:tc002": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-002 - Usuario comum nao pode utilizar funcoes restritas\"",
+    "test:api:tc001": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-001 - Unregistered user cannot play\"",
+    "test:api:tc002": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-002 - Regular user cannot use restricted functions\"",
     "test:api:tc003": "node test/api/run-tc003.cjs",
-    "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia\"",
+    "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Daily bonus cannot be claimed more than once per day\"",
     "test:api:tc005": "node test/api/run-tc005.cjs"
   },
   "lint-staged": {

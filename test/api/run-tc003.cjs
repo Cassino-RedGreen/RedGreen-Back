@@ -87,7 +87,7 @@ async function run() {
         {
           collection: require('./redgreen-api.postman_collection.json'),
           environment,
-          folder: 'TC-003 - Administrador pode utilizar funcoes restritas',
+          folder: 'TC-003 - Administrator can use restricted functions',
           reporters: ['cli'],
           timeoutRequest: 15000,
           timeoutScript: 30000,
