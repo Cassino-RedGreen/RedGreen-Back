@@ -68,10 +68,10 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
-  test:
-    name: Audit and Test
+  audit:
+    name: Audit
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
@@ -94,17 +94,18 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
-      - name: Unit tests
-        run: npm test
-
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: [lint, format, audit]
+    # success() here is required because a custom `if` replaces the default
+    # "needs succeeded" check, so it has to be spelled out explicitly.
     if: >-
-      github.event_name == 'push' ||
+      success() &&
+      (github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name != github.repository
+      github.event.pull_request.head.repo.full_name != github.repository)
     env:
       HUSKY: 0
     steps:
@@ -122,3 +123,33 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    # success() here is required because a custom `if` replaces the default
+    # "needs succeeded" check, so it has to be spelled out explicitly.
+    if: >-
+      success() &&
+      (github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name != github.repository)
+    env:
+      HUSKY: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
