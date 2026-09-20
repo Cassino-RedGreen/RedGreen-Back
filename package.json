@@ -21,17 +21,17 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:api": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json -r cli,htmlextra --reporter-htmlextra-export test/api/reports/report.html",
+    "test:api": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json -r cli,htmlextra --reporter-htmlextra-export test/api/reports/report.html",
     "test:api:tc001": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-001 - Usuario sem cadastro nao consegue jogar\"",
     "test:api:tc002": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-002 - Usuario comum nao pode utilizar funcoes restritas\"",
     "test:api:tc003": "node test/api/run-tc003.cjs",
     "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia\"",
     "test:api:tc005": "node test/api/run-tc005.cjs",
-    "test:api:tc011": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-011 - Bonus diario completa o saldo minimo e libera a sessao de slot\"",
-    "test:api:tc012": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-012 - Mesa so pode ser excluida depois do cash-out administrativo\"",
-    "test:api:tc013": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-013 - Reroll cobra o valor da mesa e e recusado sem saldo ou sem rerolls\"",
-    "test:api:tc014": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-014 - Sessao de gambit nunca expoe as cartas ainda nao reveladas\"",
-    "test:api:tc015": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.postman_environment.json --folder \"TC-015 - Alteracao da mesa nao afeta a sessao em andamento, so as seguintes\""
+    "test:api:tc011": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-011 - Bonus diario completa o saldo minimo e libera a sessao de slot\"",
+    "test:api:tc012": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-012 - Mesa so pode ser excluida depois do cash-out administrativo\"",
+    "test:api:tc013": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-013 - Reroll cobra o valor da mesa e e recusado sem saldo ou sem rerolls\"",
+    "test:api:tc014": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-014 - Sessao de gambit nunca expoe as cartas ainda nao reveladas\"",
+    "test:api:tc015": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-015 - Alteracao da mesa nao afeta a sessao em andamento, so as seguintes\""
   },
   "lint-staged": {
     "*.ts": [
