@@ -49,7 +49,7 @@ export class GambitSession {
     type: () => GambitTable,
     description: 'The gambit table associated with this session',
   })
-  @ManyToOne(() => GambitTable, { nullable: false, onDelete: 'RESTRICT' })
+  @ManyToOne(() => GambitTable, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'GambitTableId' })
   GambitTable: GambitTable;
 
