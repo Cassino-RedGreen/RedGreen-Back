@@ -87,3 +87,6 @@ target/
 # Temporary files
 tmp/
 temp/
+
+# Relatorios da suite de testes de API (gerados a cada execucao)
+test/api/reports/
