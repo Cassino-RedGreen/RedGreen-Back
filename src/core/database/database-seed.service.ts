@@ -82,6 +82,15 @@ export class DatabaseSeedService implements OnModuleInit {
         TableColor: SlotMachineColor.White,
         Active: true,
       },
+      {
+        Name: 'Slot 0',
+        Description: 'SlotMachine',
+        MinimumSpinValue: 10,
+        MinimumChipsRequired: 0,
+        MinimumRerollValue: 5,
+        TableColor: SlotMachineColor.White,
+        Active: true,
+      },
     ];
 
     for (const SlotMachineData of SlotMachines) {
