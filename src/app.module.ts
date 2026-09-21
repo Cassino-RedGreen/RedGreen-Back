@@ -10,6 +10,7 @@ import { SlotSessionModule } from './modules/slot-machine/sessions/slot-session.
 import { GambitModule } from './modules/gambit/gambit.module';
 import { GambitSessionModule } from './modules/gambit/sessions/gambit-session.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
+import { DatabaseSeedService } from './core/database/database-seed.service';
 
 @Module({
   imports: [
@@ -72,6 +73,6 @@ import { SessionsModule } from './modules/sessions/sessions.module';
     SessionsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, DatabaseSeedService],
 })
 export class AppModule {}
