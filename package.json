@@ -25,7 +25,7 @@
     "test:api:tc001": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-001 - Unregistered user cannot play\"",
     "test:api:tc002": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-002 - Regular user cannot use restricted functions\"",
     "test:api:tc003": "node test/api/run-tc003.cjs",
-    "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia\"",
+    "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Daily bonus cannot be claimed more than once per day\"",
     "test:api:tc005": "node test/api/run-tc005.cjs",
     "test:api:tc006": "node test/api/run-tc006.cjs",
     "test:api:tc007": "node test/api/run-tc007.cjs",
