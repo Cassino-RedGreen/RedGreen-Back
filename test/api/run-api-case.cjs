@@ -50,6 +50,18 @@ async function RunApiCaseWithReport(
     else Environment.values.push({ key: Key, value: Value, enabled: true });
   }
 
+  const ReportExports = {};
+  if (process.env.TEST_CASE_REPORT)
+    ReportExports.json = { export: process.env.TEST_CASE_REPORT };
+  if (process.env.TEST_CASE_HTML_REPORT)
+    ReportExports.htmlextra = {
+      export: process.env.TEST_CASE_HTML_REPORT,
+      title: Case,
+      skipSensitiveData: true,
+    };
+  if (process.env.TEST_CASE_JUNIT_REPORT)
+    ReportExports.junit = { export: process.env.TEST_CASE_JUNIT_REPORT };
+
   let AdminToken;
   let ResourceId;
   const UserTokens = new Map();
