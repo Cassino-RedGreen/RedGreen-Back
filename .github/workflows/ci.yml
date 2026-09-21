@@ -153,3 +153,85 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  test-e2e:
+    name: Test E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build
+    # success() here is required because a custom `if` replaces the default
+    # "needs succeeded" check, so it has to be spelled out explicitly.
+    if: >-
+      success() &&
+      (github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name != github.repository)
+    env:
+      HUSKY: 0
+      PORT: 3000
+      JWT_SECRET: ci-e2e-secret
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: redgreen
+      POSTGRES_SSL: false
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: redgreen
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d redgreen"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Start API
+        run: |
+          nohup npm run start:prod > api.log 2>&1 &
+          echo "Waiting for the API on port $PORT..."
+          for i in $(seq 1 30); do
+            if curl -fs "http://localhost:$PORT/" > /dev/null; then
+              echo "API is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become ready in time"
+          cat api.log
+          exit 1
+
+      - name: E2E tests
+        run: npm run test:all
+
+      - name: Show API log on failure
+        if: failure()
+        run: cat api.log
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: test-results/
+          if-no-files-found: ignore
