@@ -17,7 +17,7 @@ async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
     ''
   );
   const Suffix = RandomUUID();
-  const ResourceName = `${Case} ${Resource.label} ${Suffix}`;
+  const ResourceName = `${Case} ${Resource.Label} ${Suffix}`;
   const UserEmails =
     Case === 'TC005'
       ? [`tc005.a.${Suffix}@example.test`, `tc005.b.${Suffix}@example.test`]
@@ -32,7 +32,7 @@ async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
     baseUrl: BaseUrl,
     [`${Prefix}AdminEmail`]: AdminEmail,
     [`${Prefix}AdminPassword`]: AdminPassword,
-    [Resource.variable]: ResourceName,
+    [Resource.Variable]: ResourceName,
     ...(Case === 'TC005'
       ? { tc005UserAEmail: UserEmails[0], tc005UserBEmail: UserEmails[1] }
       : {}),
@@ -47,7 +47,6 @@ async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
   let ResourceId;
   const UserTokens = new Map();
   const Errors = [];
-  // Observe API responses, including pm.sendRequest, so partial setup can be cleaned up.
   function TrackResponse(ErrorObject, Args) {
     if (
       ErrorObject ||
@@ -77,12 +76,12 @@ async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
     )
       UserTokens.set(Data.User.Email, Data.Token);
     if (
-      Path.endsWith(Resource.path) &&
+      Path.endsWith(Resource.Path) &&
       Data.Name === ResourceName &&
-      Number.isInteger(Data[Resource.id]) &&
-      Data[Resource.id] > 0
+      Number.isInteger(Data[Resource.Id]) &&
+      Data[Resource.Id] > 0
     )
-      ResourceId = Data[Resource.id];
+      ResourceId = Data[Resource.Id];
   }
 
   async function CleanupRequest(Method, Path, Token) {
@@ -131,8 +130,8 @@ async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
     if (ResourceId) {
       try {
         await CleanupRequest(
-          Resource.cleanupMethod,
-          Resource.cleanupPath(ResourceId),
+          Resource.CleanupMethod,
+          Resource.CleanupPath(ResourceId),
           AdminToken
         );
         console.log(`${Case}: test resource deactivated through the API.`);
