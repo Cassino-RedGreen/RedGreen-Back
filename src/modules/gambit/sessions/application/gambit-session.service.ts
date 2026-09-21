@@ -348,6 +348,15 @@ export class GambitSessionService {
   ): Promise<{ message: string; reward: number; finalBalance: number }> {
     const Current = await this.FindCurrentSessionEntity(UserId);
     if (!Current) {
+      const LatestSession = await this.GambitSessionRepo.findOne({
+        where: { UserId },
+        order: { GambitSessionId: 'DESC' },
+      });
+
+      if (LatestSession?.Status === GambitSessionStatus.CashedOut) {
+        throw new BadRequestException('Session has already been cashed out');
+      }
+
       throw new NotFoundException('No session to cash out');
     }
 
