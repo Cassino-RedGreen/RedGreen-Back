@@ -90,15 +90,17 @@ Dentro de CADA modulo (ex: `src/modules/games/`), a arquitetura e dividida em:
 - Testes E2E (na pasta `test/`) sao usados para simular o fluxo completo de uma aposta (chamada `HTTP` -> `Controller` -> `Service` -> `Banco`).
 
 
-**CI/CD e Automacao (Jenkins)**
+**CI/CD e Automacao (GitHub Actions)**
 
-- O projeto utiliza Jenkins como esteira de automacao.
+- O projeto utiliza GitHub Actions como esteira de automacao.
 
-- O pipeline e definido estritamente no arquivo `Jenkinsfile` na raiz do repositorio.
+- O pipeline e definido estritamente no arquivo `.github/workflows/ci.yml`.
 
 - O pipeline DEVE garantir que nenhum codigo com falha de tipagem (TypeScript) ou testes quebrados seja buildado.
 
-- Etapas (Stages) exigidas no `Jenkinsfile`: Instalacao de dependencias, Linting, Testes Unitarios, Testes E2E e Build de Producao (NestJS).
+- Etapas exigidas no workflow: Instalacao de dependencias, Auditoria de seguranca, Linting, Formatacao, Testes Unitarios e Build de Producao (NestJS).
+
+- O deploy roda como um job separado (`deploy`), com `needs: ci`, restrito a pushes na branch `main`.
 
 
 **Qualidade e Scripts**

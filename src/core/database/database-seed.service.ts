@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserType } from '@modules/auth/domain/user.entity';
@@ -7,10 +7,14 @@ import { SlotMachine } from '@modules/slot-machine/domain/slot-machine.entity';
 import { SlotMachineColor } from '@modules/slot-machine/domain/enums/slot-machine-color.enum';
 
 @Injectable()
-export class DatabaseSeedService {
+export class DatabaseSeedService implements OnModuleInit {
   private readonly Logger = new Logger(DatabaseSeedService.name);
 
   constructor(private readonly DataSource: DataSource) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.Seed();
+  }
 
   async Seed(): Promise<void> {
     await this.DataSource.transaction(async (Manager) => {

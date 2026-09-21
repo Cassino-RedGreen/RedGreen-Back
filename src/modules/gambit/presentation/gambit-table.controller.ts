@@ -58,6 +58,15 @@ export class GambitTableController {
     return this.GambitTableService.Update(+Id, DTO);
   }
 
+  @Patch(':Id/deactivate')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Toggle activation status of a gambit table by ID' })
+  @ApiOkResponse({ type: GambitTableResponseDto })
+  async Deactivate(@Param('Id') Id: string) {
+    return this.GambitTableService.Deactivate(+Id);
+  }
+
   @Delete(':Id')
   @UseGuards(AdminGuard)
   @ApiBearerAuth('access-token')
