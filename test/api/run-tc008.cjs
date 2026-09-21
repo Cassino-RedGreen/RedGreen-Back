@@ -109,7 +109,8 @@ async function run() {
           environment,
           folder:
             'TC-008 - Player completes a Slot session and starts a Gambit session with the updated balance',
-          reporters: ['cli'],
+          reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
+          reporter: { json: { export: process.env.TEST_CASE_REPORT } },
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },
