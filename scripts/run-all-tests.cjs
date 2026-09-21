@@ -32,22 +32,6 @@ function RunScenario(Script) {
     const Log = `${Name}.log`;
     const Fd = OpenSync(Join(ReportDir, Log), 'w');
     const Args = [process.env.npm_execpath, 'run', Script];
-    if (Scripts[Script].startsWith('newman ')) {
-      Args.push(
-        '--',
-        '--reporters',
-        'cli,json,htmlextra,junit',
-        '--reporter-json-export',
-        Report,
-        '--reporter-htmlextra-export',
-        HtmlReport,
-        '--reporter-htmlextra-title',
-        Script,
-        '--reporter-htmlextra-skipSensitiveData',
-        '--reporter-junit-export',
-        JunitReport
-      );
-    }
     const Child = Spawn(process.execPath, Args, {
       cwd: Root,
       env: {

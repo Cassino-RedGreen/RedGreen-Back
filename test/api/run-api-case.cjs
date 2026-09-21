@@ -2,11 +2,18 @@ const { randomUUID: RandomUUID } = require('node:crypto');
 const { resolve: Resolve } = require('node:path');
 const { existsSync: ExistsSync } = require('node:fs');
 const Newman = require('newman');
+const {
+  ResolveApiReportPath,
+  StartStandaloneLog,
+} = require('./api-report-path.cjs');
 
 const EnvPath = Resolve(__dirname, '../../.env');
 if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
 
-async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
+async function RunApiCaseWithReport(
+  { Case, Folder, MinimumAssertions, Resource },
+  Report
+) {
   const Environment = structuredClone(
     require('./redgreen.local.postman_environment.json')
   );
@@ -121,8 +128,8 @@ async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
           collection: require('./redgreen-api.postman_collection.json'),
           environment: Environment,
           folder: Folder,
-          reporters: ['cli', ...Object.keys(ReportExports)],
-          reporter: ReportExports,
+          reporters: ['cli', 'json'],
+          reporter: { json: { export: Report } },
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },
@@ -163,11 +170,22 @@ async function RunApiCase({ Case, Folder, MinimumAssertions, Resource }) {
         `${Case}: user cleanup completed through the API; account and session history is retained.`
       );
   }
+  console.log(`${Case}: JSON report: ${Report}`);
   if (Errors.length)
     throw new AggregateError(
       Errors,
       Errors.map((ErrorObject) => ErrorObject.message).join('\n')
     );
+}
+
+async function RunApiCase(Configuration) {
+  const { Report, Standalone } = ResolveApiReportPath(Configuration.Case);
+  const StopStandaloneLog = StartStandaloneLog(Report, Standalone);
+  try {
+    await RunApiCaseWithReport(Configuration, Report);
+  } finally {
+    await StopStandaloneLog();
+  }
 }
 
 module.exports = { RunApiCase };
