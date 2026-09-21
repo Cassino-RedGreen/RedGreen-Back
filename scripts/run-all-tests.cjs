@@ -27,18 +27,11 @@ function RunScenario(Script) {
   return new Promise((ResolveRun) => {
     const Name = Script.replace(/:/g, '-');
     const Report = Join(ReportDir, `${Name}.json`);
+    const HtmlReport = Join(ReportDir, `report-${Name}.html`);
+    const JunitReport = Join(ReportDir, `junit-${Name}.xml`);
     const Log = `${Name}.log`;
     const Fd = OpenSync(Join(ReportDir, Log), 'w');
     const Args = [process.env.npm_execpath, 'run', Script];
-    if (Scripts[Script].startsWith('newman ')) {
-      Args.push(
-        '--',
-        '--reporters',
-        'cli,json',
-        '--reporter-json-export',
-        Report
-      );
-    }
     const Child = Spawn(process.execPath, Args, {
       cwd: Root,
       env: {
@@ -46,6 +39,8 @@ function RunScenario(Script) {
         CI: 'true',
         FORCE_COLOR: '0',
         TEST_CASE_REPORT: Report,
+        TEST_CASE_HTML_REPORT: HtmlReport,
+        TEST_CASE_JUNIT_REPORT: JunitReport,
       },
       stdio: ['ignore', Fd, Fd],
     });

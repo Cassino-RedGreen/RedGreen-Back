@@ -88,6 +88,12 @@ target/
 tmp/
 temp/
 
+# Relatorios da suite de testes de API (gerados a cada execucao)
+test/api/reports/
+
+# Site do relatorio de testes E2E (gerado por scripts/build-pages-index.cjs)
+_site/
+
 # k6 load-test reports
 test/performance/artifacts/*.json
 test/performance/artifacts/*.html

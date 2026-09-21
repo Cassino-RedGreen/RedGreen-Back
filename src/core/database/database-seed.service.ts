@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserType } from '@modules/auth/domain/user.entity';
 import { GambitTable } from '@modules/gambit/domain/gambit-table.entity';
@@ -13,35 +13,47 @@ export class DatabaseSeedService implements OnModuleInit {
   constructor(private readonly DataSource: DataSource) {}
 
   async onModuleInit(): Promise<void> {
-    await this.SeedAdmin();
-    await this.SeedSlotMachines();
-    await this.SeedGambitTables();
-    this.Logger.log('Database seed completed');
+    await this.Seed();
   }
 
-  private async SeedAdmin(): Promise<void> {
-    const UserRepo = this.DataSource.getRepository(User);
-    const ExistingUser = await UserRepo.findOne({
-      where: { Email: 'admin@admin.com' },
+  async Seed(): Promise<void> {
+    await this.DataSource.transaction(async (Manager) => {
+      await this.SeedAdmin(Manager);
+      await this.SeedSlotMachines(Manager);
+      await this.SeedGambitTables(Manager);
     });
 
-    if (ExistingUser) return;
+    this.Logger.log('Official database seed completed');
+  }
 
-    const Admin = UserRepo.create({
-      Name: 'Administrator',
-      BirthDate: new Date('1990-01-01'),
-      Nickname: 'admin',
+  private async SeedAdmin(Manager: EntityManager): Promise<void> {
+    const UserRepo = Manager.getRepository(User);
+    const ExistingAdmin = await UserRepo.createQueryBuilder('User')
+      .addSelect('User.Password')
+      .where('User.Email = :Email', { Email: 'admin@admin.com' })
+      .getOne();
+    let Password = ExistingAdmin?.Password;
+    if (!Password || !(await bcrypt.compare('admin123', Password))) {
+      Password = await bcrypt.hash('admin123', 10);
+    }
+    const Admin = ExistingAdmin ?? UserRepo.create();
+
+    UserRepo.merge(Admin, {
+      Name: 'Admin',
+      Nickname: 'Admin',
       Email: 'admin@admin.com',
-      Password: await bcrypt.hash('admin123', 10),
-      UserType: UserType.ADMIN,
+      Password,
+      BirthDate: new Date('1990-12-29T00:00:00.000Z'),
+      ChipBalance: 10000,
       Active: true,
+      UserType: UserType.ADMIN,
     });
 
     await UserRepo.save(Admin);
   }
 
-  private async SeedSlotMachines(): Promise<void> {
-    const SlotMachineRepo = this.DataSource.getRepository(SlotMachine);
+  private async SeedSlotMachines(Manager: EntityManager): Promise<void> {
+    const SlotMachineRepo = Manager.getRepository(SlotMachine);
     const SlotMachines = [
       {
         Name: 'Slot 1',
@@ -50,6 +62,7 @@ export class DatabaseSeedService implements OnModuleInit {
         MinimumChipsRequired: 100,
         MinimumRerollValue: 5,
         TableColor: SlotMachineColor.White,
+        Active: true,
       },
       {
         Name: 'Slot 2',
@@ -58,6 +71,7 @@ export class DatabaseSeedService implements OnModuleInit {
         MinimumChipsRequired: 500,
         MinimumRerollValue: 10,
         TableColor: SlotMachineColor.White,
+        Active: true,
       },
       {
         Name: 'Slot 3',
@@ -66,6 +80,7 @@ export class DatabaseSeedService implements OnModuleInit {
         MinimumChipsRequired: 600,
         MinimumRerollValue: 15,
         TableColor: SlotMachineColor.White,
+        Active: true,
       },
     ];
 
@@ -73,14 +88,14 @@ export class DatabaseSeedService implements OnModuleInit {
       const ExistingSlotMachine = await SlotMachineRepo.findOneBy({
         Name: SlotMachineData.Name,
       });
-      if (!ExistingSlotMachine) {
-        await SlotMachineRepo.save(SlotMachineRepo.create(SlotMachineData));
-      }
+      const Machine = ExistingSlotMachine ?? SlotMachineRepo.create();
+      SlotMachineRepo.merge(Machine, SlotMachineData);
+      await SlotMachineRepo.save(Machine);
     }
   }
 
-  private async SeedGambitTables(): Promise<void> {
-    const GambitTableRepo = this.DataSource.getRepository(GambitTable);
+  private async SeedGambitTables(Manager: EntityManager): Promise<void> {
+    const GambitTableRepo = Manager.getRepository(GambitTable);
     const GambitTables = [
       {
         Name: 'Gambit 1',
@@ -90,6 +105,7 @@ export class DatabaseSeedService implements OnModuleInit {
         TableMultiplier: 1,
         MinimumCardsPurchased: 5,
         MaxCardsPurchased: 20,
+        Active: true,
       },
       {
         Name: 'Gambit 2',
@@ -99,6 +115,17 @@ export class DatabaseSeedService implements OnModuleInit {
         TableMultiplier: 1,
         MinimumCardsPurchased: 5,
         MaxCardsPurchased: 20,
+        Active: true,
+      },
+      {
+        Name: 'Gambit 3',
+        Description: 'Gambit',
+        MinimumChipsRequired: 100,
+        CardPrice: 20,
+        TableMultiplier: 1,
+        MinimumCardsPurchased: 7,
+        MaxCardsPurchased: 20,
+        Active: true,
       },
       {
         Name: 'High Stake Gambit',
@@ -108,6 +135,7 @@ export class DatabaseSeedService implements OnModuleInit {
         TableMultiplier: 1,
         MinimumCardsPurchased: 5,
         MaxCardsPurchased: 25,
+        Active: true,
       },
     ];
 
@@ -115,9 +143,9 @@ export class DatabaseSeedService implements OnModuleInit {
       const ExistingGambitTable = await GambitTableRepo.findOneBy({
         Name: GambitTableData.Name,
       });
-      if (!ExistingGambitTable) {
-        await GambitTableRepo.save(GambitTableRepo.create(GambitTableData));
-      }
+      const Table = ExistingGambitTable ?? GambitTableRepo.create();
+      GambitTableRepo.merge(Table, GambitTableData);
+      await GambitTableRepo.save(Table);
     }
   }
 }

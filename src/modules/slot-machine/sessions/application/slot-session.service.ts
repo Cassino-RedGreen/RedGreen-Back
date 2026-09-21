@@ -211,6 +211,15 @@ export class SlotSessionService {
     const ActiveSession = await this.findActiveSession(userId);
 
     if (!ActiveSession) {
+      const LatestSession = await this.slotSessionRepo.findOne({
+        where: { UserId: userId, DeletedAt: IsNull() },
+        order: { SlotSessionId: 'DESC' },
+      });
+
+      if (LatestSession?.Status === SlotSessionStatus.CashedOut) {
+        throw new BadRequestException('Session has already been cashed out');
+      }
+
       throw new NotFoundException('No active session found');
     }
 
