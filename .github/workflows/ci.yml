@@ -94,41 +94,11 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [lint, format, audit]
-    # success() here is required because a custom `if` replaces the default
-    # "needs succeeded" check, so it has to be spelled out explicitly.
-    if: >-
-      success() &&
-      (github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name != github.repository)
-    env:
-      HUSKY: 0
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
   test:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: build
+    needs: [lint, format, audit]
     # success() here is required because a custom `if` replaces the default
     # "needs succeeded" check, so it has to be spelled out explicitly.
     if: >-
@@ -158,7 +128,7 @@ jobs:
     name: Test E2E
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: build
+    needs: [lint, format, audit]
     # success() here is required because a custom `if` replaces the default
     # "needs succeeded" check, so it has to be spelled out explicitly.
     if: >-
@@ -168,31 +138,44 @@ jobs:
       github.event.pull_request.head.repo.full_name != github.repository)
     env:
       HUSKY: 0
-      PORT: 3000
-      JWT_SECRET: ci-e2e-secret
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: redgreen
-      POSTGRES_SSL: false
+      PORT: ${{ vars.PORT }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      POSTGRES_HOST: ${{ vars.POSTGRES_HOST }}
+      POSTGRES_PORT: ${{ vars.POSTGRES_PORT }}
+      POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+      POSTGRES_SSL: ${{ vars.POSTGRES_SSL }}
     services:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: redgreen
+          POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ vars.POSTGRES_DB }}
         ports:
-          - 5432:5432
+          # The API reaches the service through POSTGRES_HOST:POSTGRES_PORT.
+          - ${{ vars.POSTGRES_PORT }}:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d redgreen"
+          --health-cmd "pg_isready -U ${{ vars.POSTGRES_USER }} -d ${{ vars.POSTGRES_DB }}"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Validate required variables and secrets
+        # Only checks that each value is set; never prints the values.
+        run: |
+          missing=0
+          for name in PORT POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_DB POSTGRES_SSL JWT_SECRET POSTGRES_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::${name} is empty or not defined. Create it in Settings > Secrets and variables > Actions."
+              missing=1
+            fi
+          done
+          exit $missing
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -210,7 +193,7 @@ jobs:
         run: |
           nohup npm run start:prod > api.log 2>&1 &
           echo "Waiting for the API on port $PORT..."
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fs "http://localhost:$PORT/" > /dev/null; then
               echo "API is up"
               exit 0
@@ -228,10 +211,107 @@ jobs:
         if: failure()
         run: cat api.log
 
+      - name: Write test summary
+        if: always()
+        run: node scripts/write-e2e-summary.cjs >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-results
           path: test-results/
+          retention-days: 14
           if-no-files-found: ignore
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test, test-e2e]
+    # success() here is required because a custom `if` replaces the default
+    # "needs succeeded" check, so it has to be spelled out explicitly.
+    if: >-
+      success() &&
+      (github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name != github.repository)
+    env:
+      HUSKY: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  publish-report:
+    name: Publish Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test-e2e
+    # Runs even when test-e2e fails (a failing report is the useful one), but
+    # only for pushes to the default branch and never for cancelled runs.
+    if: >-
+      !cancelled() &&
+      needs.test-e2e.result != 'skipped' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Download test results
+        # Still publishes an index saying "no results" when test-e2e produced
+        # no artifact (e.g. it failed before running the tests).
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: e2e-test-results
+          path: test-results
+
+      - name: Build report site
+        run: node scripts/build-pages-index.cjs
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Write report link to summary
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          echo "Published E2E report: [$PAGE_URL]($PAGE_URL)" >> "$GITHUB_STEP_SUMMARY"
