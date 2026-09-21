@@ -136,6 +136,16 @@ export class DatabaseSeedService implements OnModuleInit {
         MaxCardsPurchased: 20,
         Active: true,
       },
+      {
+        Name: 'High Stake Gambit',
+        Description: 'Gambit',
+        MinimumChipsRequired: 100,
+        CardPrice: 10,
+        TableMultiplier: 1,
+        MinimumCardsPurchased: 5,
+        MaxCardsPurchased: 25,
+        Active: true,
+      },
     ];
 
     for (const GambitTableData of GambitTables) {
