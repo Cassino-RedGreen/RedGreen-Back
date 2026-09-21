@@ -30,7 +30,9 @@
     "test:api:tc016": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-016\"",
     "test:api:tc017": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-017\"",
     "test:api:tc018": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-018\"",
-    "test:api:tc019": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-019\""
+    "test:api:tc019": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-019\"",
+    "test:api:tc020": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-020\"",
+    "test:api:tc021": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-021\""
   },
   "lint-staged": {
     "*.ts": [
