@@ -34,7 +34,9 @@ function RunScenario(Script) {
       Args.push(
         '--',
         '--reporters',
-        'cli,json',
+        'cli',
+        '--reporters',
+        'json',
         '--reporter-json-export',
         Report
       );
