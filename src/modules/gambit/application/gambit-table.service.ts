@@ -65,6 +65,12 @@ export class GambitTableService {
     return this.GambitTableRepo.save(GambitTable);
   }
 
+  async Deactivate(Id: number): Promise<GambitTable> {
+    const GambitTable = await this.FindOne(Id);
+    GambitTable.Active = !GambitTable.Active;
+    return this.GambitTableRepo.save(GambitTable);
+  }
+
   async Remove(Id: number): Promise<void> {
     const GambitTable = await this.FindOne(Id);
 
@@ -74,12 +80,11 @@ export class GambitTableService {
 
     if (ActiveSession) {
       throw new BadRequestException(
-        `Cannot deactivate GambitTable ${Id} while there are active sessions`
+        `Cannot delete GambitTable ${Id} while there are active sessions`
       );
     }
 
-    GambitTable.Active = false;
-    await this.GambitTableRepo.save(GambitTable);
+    await this.GambitTableRepo.remove(GambitTable);
   }
 
   async FindActiveSessions(Id: number): Promise<ActiveSessionResponseDto[]> {
@@ -92,7 +97,6 @@ export class GambitTableService {
       UserId: s.UserId,
       Nickname: s.User.Nickname,
       Status: s.Status,
-      // TODO: Result !== null branch depends on end-of-game scoring not yet implemented
       PotentialPayout:
         s.Result !== null
           ? s.Result
@@ -131,7 +135,6 @@ export class GambitTableService {
       const Now = new Date();
 
       for (const Session of ActiveSessions) {
-        // TODO: Result !== null branch depends on end-of-game scoring not yet implemented
         const Valor =
           Session.Result !== null
             ? Session.Result

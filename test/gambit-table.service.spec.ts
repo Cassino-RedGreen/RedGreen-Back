@@ -15,6 +15,7 @@ import { UpdateGambitTableDto } from '../src/modules/gambit/domain/dto/update-ga
 type GambitTableRepoMock = {
   create: jest.MockedFunction<(table: Partial<GambitTable>) => GambitTable>;
   save: jest.MockedFunction<(table: GambitTable) => Promise<GambitTable>>;
+  remove: jest.MockedFunction<(table: GambitTable) => Promise<GambitTable>>;
   find: jest.MockedFunction<() => Promise<GambitTable[]>>;
   findOneBy: jest.MockedFunction<
     (criteria: object) => Promise<GambitTable | null>
@@ -53,6 +54,7 @@ describe('GambitTableService', () => {
   const MockTableRepo: GambitTableRepoMock = {
     create: jest.fn(),
     save: jest.fn(),
+    remove: jest.fn(),
     find: jest.fn(),
     findOneBy: jest.fn(),
   };
@@ -184,15 +186,15 @@ describe('GambitTableService', () => {
   });
 
   describe('Remove', () => {
-    it('should set Active to false instead of deleting the record', async () => {
+    it('should delete the table record', async () => {
       tableRepo.findOneBy.mockResolvedValue({ ...MockTable });
       sessionRepo.findOne.mockResolvedValue(null);
-      tableRepo.save.mockImplementation((table) => Promise.resolve(table));
+      tableRepo.remove.mockResolvedValue(MockTable);
 
       await service.Remove(1);
 
-      expect(tableRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ Active: false })
+      expect(tableRepo.remove).toHaveBeenCalledWith(
+        expect.objectContaining({ GambitTableId: 1 })
       );
     });
 
@@ -202,12 +204,42 @@ describe('GambitTableService', () => {
 
       await expect(service.Remove(1)).rejects.toThrow(BadRequestException);
       expect(tableRepo.save).not.toHaveBeenCalled();
+      expect(tableRepo.remove).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when table does not exist', async () => {
       tableRepo.findOneBy.mockResolvedValue(null);
 
       await expect(service.Remove(99)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('Deactivate', () => {
+    it('should toggle the table Active status', async () => {
+      tableRepo.findOneBy.mockResolvedValue({ ...MockTable });
+      tableRepo.save.mockImplementation((table) => Promise.resolve(table));
+
+      const Result = await service.Deactivate(1);
+
+      expect(tableRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ Active: false })
+      );
+      expect(Result.Active).toBe(false);
+    });
+
+    it('should reactivate an inactive table', async () => {
+      tableRepo.findOneBy.mockResolvedValue({ ...MockTable, Active: false });
+      tableRepo.save.mockImplementation((table) => Promise.resolve(table));
+
+      const Result = await service.Deactivate(1);
+
+      expect(Result.Active).toBe(true);
+    });
+
+    it('should throw NotFoundException when table does not exist', async () => {
+      tableRepo.findOneBy.mockResolvedValue(null);
+
+      await expect(service.Deactivate(99)).rejects.toThrow(NotFoundException);
     });
   });
 });
