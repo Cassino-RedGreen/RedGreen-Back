@@ -10,6 +10,7 @@ import { SlotSessionModule } from './modules/slot-machine/sessions/slot-session.
 import { GambitModule } from './modules/gambit/gambit.module';
 import { GambitSessionModule } from './modules/gambit/sessions/gambit-session.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
+import { DatabaseSeedService } from './core/database/database-seed.service';
 
 @Module({
   imports: [
@@ -26,6 +27,10 @@ import { SessionsModule } from './modules/sessions/sessions.module';
         const database = Config.get<string>('POSTGRES_DB');
         const sslEnabled =
           Config.get<string>('POSTGRES_SSL', 'false') === 'true';
+        const poolSize = parseInt(
+          Config.get<string>('TEST_DB_POOL_SIZE', '5'),
+          10
+        );
 
         if (!username || !password || !database) {
           throw new Error(
@@ -49,7 +54,7 @@ import { SessionsModule } from './modules/sessions/sessions.module';
           logging: true,
           ssl: sslEnabled ? { rejectUnauthorized: false } : false,
           extra: {
-            max: 5,
+            max: Number.isFinite(poolSize) && poolSize > 0 ? poolSize : 5,
             connectionTimeoutMillis: 10000,
             idleTimeoutMillis: 30000,
           },
@@ -72,6 +77,6 @@ import { SessionsModule } from './modules/sessions/sessions.module';
     SessionsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, DatabaseSeedService],
 })
 export class AppModule {}

@@ -122,7 +122,9 @@ export class SlotSessionService {
         currentBalance: FinalBalance.ChipBalance,
       };
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
       await queryRunner.release();
@@ -332,7 +334,9 @@ export class SlotSessionService {
         currentBalance: FinalBalance.ChipBalance,
       };
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
       await queryRunner.release();
@@ -388,7 +392,9 @@ export class SlotSessionService {
         finalBalance: FinalBalance.ChipBalance,
       };
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
       await queryRunner.release();
