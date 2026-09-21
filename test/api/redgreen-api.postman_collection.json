@@ -709,7 +709,7 @@
     },
     {
       "name": "TC-006 - Admin creates and configures an active table correctly",
-      "description": "Verifies that an administrator can create a new Slot Machine (table) via POST /slot/machine and that it is configured correctly. The shared admin account (adminEmail, adminPassword - reused by TC-006, TC-008, TC-009 and TC-010, created manually per test/api/SHARED_SETUP.md) is used to log in, and the table name (tc006TableName) is injected into the environment by the fixture script (run-tc006.cjs). The table created by this run is deleted at the end of the folder itself, via DELETE /slot/machine/:Id (admin-only) - the fixture script never touches the database directly, it only validates the local API is reachable and reads the seeded admin credentials.",
+      "description": "Verifies that an administrator can create a new Slot Machine (table) via POST /slot/machine and that it is configured correctly. The shared admin account (adminEmail, adminPassword - reused by TC-006, TC-008, TC-009 and TC-010, created manually per test/api/SHARED_SETUP.md) is used to log in, and the table name (tc006TableName) is injected into the environment by the fixture script (run-tc006.cjs). Everything (login, creation, and cleanup) is consolidated into this single request, matching the single-item pattern used by TC-001 to TC-005 and TC-011 to TC-015: the table created by this run is deleted at the end of the test script itself, via DELETE /slot/machine/:Id (admin-only) - the fixture script never touches the database directly, it only validates the local API is reachable and reads the seeded admin credentials.",
       "item": [
         {
           "name": "TC-006 - Admin creates active slot machine table",
@@ -810,6 +810,17 @@
                   "pm.test('TC-006 - The created table is ACTIVE (Active = true)', function () {",
                   "  ResponseJson = ResponseJson || pm.response.json();",
                   "  pm.expect(ResponseJson).to.have.property('Active', true);",
+                  "});",
+                  "",
+                  "pm.sendRequest({",
+                  "  url: pm.environment.get('baseUrl') + '/slot/machine/' + pm.environment.get('tc006SlotMachineId'),",
+                  "  method: 'DELETE',",
+                  "  header: { Authorization: 'Bearer ' + pm.environment.get('tc006AdminToken') }",
+                  "}, function (ErrorObject, Response) {",
+                  "  pm.test('TC-006 - the table created by this run is deleted successfully (200)', function () {",
+                  "    if (ErrorObject) throw ErrorObject;",
+                  "    pm.expect(Response.code).to.eql(200);",
+                  "  });",
                   "});"
                 ]
               }
@@ -832,37 +843,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["slot", "machine"]
             },
-            "description": "TC-006 flow: the admin credentials (adminEmail/adminPassword) are read from the environment (see test/api/SHARED_SETUP.md). The pre-request logs in with those credentials and stores the JWT in tc006AdminToken; the main POST creates the table; the post-response checks status 201, SlotMachineId (saved as tc006SlotMachineId for the cleanup step below), correctly persisted fields, and Active=true."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-006 - Cleanup: delete the table created by this run",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-006 - the table created by this run is deleted successfully (200)', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "DELETE",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc006AdminToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/slot/machine/{{tc006SlotMachineId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["slot", "machine", "{{tc006SlotMachineId}}"]
-            },
-            "description": "Hard-deletes (DELETE /slot/machine/:Id, admin-only) the table this run created, using the same admin token from the first request. Keeps the whole TC-006 flow inside the API - the fixture script only reads the shared admin credentials, it never touches the database directly."
+            "description": "TC-006 flow: the admin credentials (adminEmail/adminPassword) are read from the environment (see test/api/SHARED_SETUP.md). The pre-request logs in with those credentials and stores the JWT in tc006AdminToken; the main POST creates the table; the post-response checks status 201, SlotMachineId (saved as tc006SlotMachineId), correctly persisted fields, and Active=true; the test script then deletes the table it just created via DELETE /slot/machine/:Id."
           },
           "response": []
         }
@@ -972,7 +953,7 @@
     },
     {
       "name": "TC-008 - Player completes a Slot session and starts a Gambit session with the updated balance",
-      "description": "Verifies that a player can start a Slot session, reroll a reel, cash out, and then start a Gambit session, with the ChipBalance correctly updated at every step; the Gambit session is then fully played out (every purchased card burned, auto-resolving any selection event or REVEAL/PEEK_CARDS interaction along the way) and cashed out too, so the folder always ends with the player free to start a new game. Uses the shared tables 'Slot 1' and 'Gambit 1', created manually by each developer (see test/api/SHARED_SETUP.md) - nothing in this repo creates them. The player itself IS created live, right here in the first request's pre-request script (self-contained, same pattern as TC-002), so this folder keeps working whether it's run from the terminal (npm run test:api:tc008) or by clicking Send directly in the Postman app. Balance deltas are asserted against the actual cost/reward fields each endpoint returns (MinimumSpinValue, MinimumRerollValue, CardPrice), not against a hard-coded final number, because both the Slot reward and the Gambit result are randomized and only become known from the API's own responses.",
+      "description": "Verifies that a player can start a Slot session, reroll a reel, cash out, and then start a Gambit session, with the ChipBalance correctly updated at every step; the Gambit session is then fully played out (every purchased card burned, auto-resolving any selection event or REVEAL/PEEK_CARDS interaction along the way) and cashed out too, so the folder always ends with the player free to start a new game. Uses the shared tables 'Slot 1' and 'Gambit 1', created manually by each developer (see test/api/SHARED_SETUP.md) - nothing in this repo creates them. The player itself IS created live, right here in the pre-request script (self-contained, same pattern as TC-002), so this folder keeps working whether it's run from the terminal (npm run test:api:tc008) or by clicking Send directly in the Postman app. Everything is consolidated into this single request, matching the single-item pattern used by TC-001 to TC-005 and TC-011 to TC-015: only the Slot session creation is a visible request, the reroll, Slot cash-out, no-active-session check, Gambit session creation and the full Gambit playthrough + cash-out all run as internal pm.sendRequest calls in the test script, each with its own pm.test assertions. Balance deltas are asserted against the actual cost/reward fields each endpoint returns (MinimumSpinValue, MinimumRerollValue, CardPrice), not against a hard-coded final number, because both the Slot reward and the Gambit result are randomized and only become known from the API's own responses.",
       "item": [
         {
           "name": "TC-008 - Start a Slot session (spin cost is debited)",
@@ -1081,6 +1062,193 @@
                   "  const SpinValue = Number(pm.environment.get('tc008SlotMinimumSpinValue'));",
                   "  pm.expect(Body.currentBalance).to.eql(InitialBalance - SpinValue);",
                   "  pm.environment.set('tc008BalanceAfterSpin', String(Body.currentBalance));",
+                  "});",
+                  "",
+                  "const BaseUrl = pm.environment.get('baseUrl');",
+                  "const PlayerToken = pm.environment.get('tc008PlayerToken');",
+                  "",
+                  "function StopWrapUp(ErrorObject) {",
+                  "  pm.test('TC-008 - the rest of the flow (reroll, cash-out, Gambit) succeeds', function () {",
+                  "    throw new Error(ErrorObject.message || String(ErrorObject));",
+                  "  });",
+                  "}",
+                  "",
+                  "function RerollReel(Callback) {",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/sessions/active/reroll/0',",
+                  "    method: 'POST',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    let RerollBody;",
+                  "    try { RerollBody = Response.json(); } catch (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    pm.test('TC-008 - the reroll succeeds (201) and the reroll cost (MinimumRerollValue) is debited from the balance', function () {",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "      const BalanceAfterSpin = Number(pm.environment.get('tc008BalanceAfterSpin'));",
+                  "      const RerollValue = Number(pm.environment.get('tc008SlotMinimumRerollValue'));",
+                  "      pm.expect(RerollBody.currentBalance).to.eql(BalanceAfterSpin - RerollValue);",
+                  "      pm.expect(RerollBody.session).to.have.property('CurrentRewardSnapshot');",
+                  "    });",
+                  "    pm.environment.set('tc008BalanceAfterReroll', String(RerollBody.currentBalance));",
+                  "    pm.environment.set('tc008RewardSnapshot', String(RerollBody.session.CurrentRewardSnapshot));",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function CashOutSlot(Callback) {",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/sessions/active/cash-out',",
+                  "    method: 'POST',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    let CashOutBody;",
+                  "    try { CashOutBody = Response.json(); } catch (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    pm.test('TC-008 - the Slot cash-out succeeds (201) and pays the reward snapshot into the balance', function () {",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "      const BalanceAfterReroll = Number(pm.environment.get('tc008BalanceAfterReroll'));",
+                  "      const Reward = Number(pm.environment.get('tc008RewardSnapshot'));",
+                  "      pm.expect(CashOutBody.finalBalance).to.eql(BalanceAfterReroll + Reward);",
+                  "    });",
+                  "    pm.environment.set('tc008BalanceAfterSlotCashOut', String(CashOutBody.finalBalance));",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function VerifyNoActiveSession(Callback) {",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/sessions/active',",
+                  "    method: 'GET',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    pm.test('TC-008 - no active Slot session remains after cashing out (200, empty body)', function () {",
+                  "      pm.expect(Response.code).to.eql(200);",
+                  "      pm.expect(Response.text()).to.be.empty;",
+                  "    });",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function ResolveGambitTableId(Callback) {",
+                  "  pm.sendRequest({ url: BaseUrl + '/gambit-table', method: 'GET' }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    let Tables;",
+                  "    try { Tables = Response.json(); } catch (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    const Found = Tables.find(function (T) { return T.Name === 'Gambit 1' && T.Active; });",
+                  "    if (!Found) {",
+                  "      StopWrapUp(new Error('Shared gambit table \"Gambit 1\" not found - create it manually first (see test/api/SHARED_SETUP.md)'));",
+                  "      return;",
+                  "    }",
+                  "    pm.environment.set('tc008GambitTableId', String(Found.GambitTableId));",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function StartGambitSession(Callback) {",
+                  "  const CardsPurchased = Number(pm.environment.get('tc008GambitCardsPurchased'));",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/gambit-tables/' + pm.environment.get('tc008GambitTableId') + '/sessions',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PlayerToken },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ CardsPurchased: CardsPurchased }) }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    let GambitBody;",
+                  "    try { GambitBody = Response.json(); } catch (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    pm.test('TC-008 - the Gambit session is created successfully (201) with the purchased cards, card cost debited from the post-Slot-cash-out balance', function () {",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "      pm.expect(GambitBody.session).to.have.property('GambitSessionId');",
+                  "      pm.expect(GambitBody.session.Status).to.eql('InProgress');",
+                  "      pm.expect(GambitBody.session.CardsPurchased).to.eql(CardsPurchased);",
+                  "      const BalanceAfterSlotCashOut = Number(pm.environment.get('tc008BalanceAfterSlotCashOut'));",
+                  "      const CardPrice = Number(pm.environment.get('tc008GambitCardPrice'));",
+                  "      pm.expect(GambitBody.currentBalance).to.eql(BalanceAfterSlotCashOut - CardPrice * CardsPurchased);",
+                  "    });",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function PickPositions(Unrevealed, Count) {",
+                  "  return Unrevealed.filter(function (C) { return !C.Locked; }).slice(0, Count).map(function (C) { return C.Position; });",
+                  "}",
+                  "",
+                  "function CashOutGambit() {",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/gambit/sessions/active/cash-out',",
+                  "    method: 'POST',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    pm.test('TC-008 - the Gambit cash-out succeeds (201) and pays a valid reward', function () {",
+                  "      if (ErrorObject) throw ErrorObject;",
+                  "      const CashOutBody = Response.json();",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "      pm.expect(CashOutBody).to.have.property('reward');",
+                  "      pm.expect(CashOutBody).to.have.property('finalBalance');",
+                  "      pm.expect(CashOutBody.finalBalance).to.be.at.least(CashOutBody.reward);",
+                  "    });",
+                  "  });",
+                  "}",
+                  "",
+                  "function BurnStep(IterationsLeft) {",
+                  "  if (IterationsLeft <= 0) { StopWrapUp(new Error('Gambit auto-completion exceeded the safety iteration limit')); return; }",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/gambit/sessions/active',",
+                  "    method: 'GET',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    let Session;",
+                  "    try { Session = Response.json(); } catch (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    if (Session.Status === 'Finished') { CashOutGambit(); return; }",
+                  "    if (Session.Grid.PendingEvent) {",
+                  "      pm.sendRequest({",
+                  "        url: BaseUrl + '/gambit/sessions/active/resolve-event',",
+                  "        method: 'POST',",
+                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
+                  "        body: { mode: 'raw', raw: JSON.stringify({ GoodIndex: 0, BadIndex: 0 }) }",
+                  "      }, function (ResolveError) {",
+                  "        if (ResolveError) { StopWrapUp(ResolveError); return; }",
+                  "        BurnStep(IterationsLeft - 1);",
+                  "      });",
+                  "      return;",
+                  "    }",
+                  "    if (Session.Grid.PendingInteraction) {",
+                  "      const Positions = PickPositions(Session.Grid.Unrevealed, Session.Grid.PendingInteraction.RequiredSelections);",
+                  "      pm.sendRequest({",
+                  "        url: BaseUrl + '/gambit/sessions/active/resolve-effect',",
+                  "        method: 'POST',",
+                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
+                  "        body: { mode: 'raw', raw: JSON.stringify({ Positions: Positions }) }",
+                  "      }, function (ResolveError) {",
+                  "        if (ResolveError) { StopWrapUp(ResolveError); return; }",
+                  "        BurnStep(IterationsLeft - 1);",
+                  "      });",
+                  "      return;",
+                  "    }",
+                  "    const Target = PickPositions(Session.Grid.Unrevealed, 1)[0];",
+                  "    if (Target === undefined) { StopWrapUp(new Error('No burnable card left but the Gambit session is not Finished')); return; }",
+                  "    pm.sendRequest({",
+                  "      url: BaseUrl + '/gambit/sessions/active/burn/' + Target,",
+                  "      method: 'POST',",
+                  "      header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "    }, function (BurnError) {",
+                  "      if (BurnError) { StopWrapUp(BurnError); return; }",
+                  "      BurnStep(IterationsLeft - 1);",
+                  "    });",
+                  "  });",
+                  "}",
+                  "",
+                  "RerollReel(function () {",
+                  "  CashOutSlot(function () {",
+                  "    VerifyNoActiveSession(function () {",
+                  "      ResolveGambitTableId(function () {",
+                  "        StartGambitSession(function () {",
+                  "          BurnStep(30);",
+                  "        });",
+                  "      });",
+                  "    });",
+                  "  });",
                   "});"
                 ]
               }
@@ -1103,322 +1271,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["slot-machines", "{{tc008SlotMachineId}}", "sessions"]
             },
-            "description": "Player starts a Slot session on the dedicated TC-008 machine. The MinimumSpinValue configured on the machine is debited from the player's ChipBalance immediately."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-008 - Reroll a reel on the active Slot session (reroll cost is debited)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let Body;",
-                  "",
-                  "pm.test('TC-008 - the reroll succeeds (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-008 - the reroll cost (MinimumRerollValue) is debited from the balance', function () {",
-                  "  Body = pm.response.json();",
-                  "  const BalanceAfterSpin = Number(pm.environment.get('tc008BalanceAfterSpin'));",
-                  "  const RerollValue = Number(pm.environment.get('tc008SlotMinimumRerollValue'));",
-                  "  pm.expect(Body.currentBalance).to.eql(BalanceAfterSpin - RerollValue);",
-                  "  pm.environment.set('tc008BalanceAfterReroll', String(Body.currentBalance));",
-                  "});",
-                  "",
-                  "pm.test('TC-008 - the reroll updates the reward snapshot used by the next cash-out', function () {",
-                  "  Body = Body || pm.response.json();",
-                  "  pm.expect(Body.session).to.have.property('CurrentRewardSnapshot');",
-                  "  pm.expect(Body.session.CurrentRewardSnapshot).to.be.a('number');",
-                  "  pm.environment.set('tc008RewardSnapshot', String(Body.session.CurrentRewardSnapshot));",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc008PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/sessions/active/reroll/0",
-              "host": ["{{baseUrl}}"],
-              "path": ["sessions", "active", "reroll", "0"]
-            },
-            "description": "Rerolls reel index 0 on the player's active Slot session (the 'active session' convenience route, so the test does not need to track the SlotSessionId). The MinimumRerollValue configured on the machine is debited from the balance, and the reward snapshot is recomputed from the new reel result."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-008 - Cash out the Slot session (reward credited, session released)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let Body;",
-                  "",
-                  "pm.test('TC-008 - the cash-out succeeds (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-008 - the final balance equals the pre-cash-out balance plus the reward snapshot', function () {",
-                  "  Body = pm.response.json();",
-                  "  const BalanceAfterReroll = Number(pm.environment.get('tc008BalanceAfterReroll'));",
-                  "  const Reward = Number(pm.environment.get('tc008RewardSnapshot'));",
-                  "  pm.expect(Body.finalBalance).to.eql(BalanceAfterReroll + Reward);",
-                  "  pm.environment.set('tc008BalanceAfterSlotCashOut', String(Body.finalBalance));",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc008PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/sessions/active/cash-out",
-              "host": ["{{baseUrl}}"],
-              "path": ["sessions", "active", "cash-out"]
-            },
-            "description": "Cashes out the player's active Slot session. Pays the session's current reward snapshot into the ChipBalance and releases the shared ActiveSession slot so a new game (Slot or Gambit) can be started."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-008 - No active session remains after cashing out",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-008 - the request succeeds (200)', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test('TC-008 - there is no active session left (empty response body)', function () {",
-                  "  pm.expect(pm.response.text()).to.be.empty;",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc008PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/sessions/active",
-              "host": ["{{baseUrl}}"],
-              "path": ["sessions", "active"]
-            },
-            "description": "Confirms the Slot session's ActiveSession row was released by cash-out, which is the precondition for starting a Gambit session (a player can have at most one active session, Slot or Gambit, at a time)."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-008 - Start a Gambit session with the updated balance",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.sendRequest({ url: pm.environment.get('baseUrl') + '/gambit-table', method: 'GET' }, function (ErrorObject, Response) {",
-                  "  if (ErrorObject) {",
-                  "    pm.test('TC-008 - gambit table lookup setup succeeds', function () { throw ErrorObject; });",
-                  "    pm.execution.skipRequest();",
-                  "    return;",
-                  "  }",
-                  "  let Tables;",
-                  "  try { Tables = Response.json(); } catch (ErrorObject) { Tables = null; }",
-                  "  const Found = Tables && Tables.find(function (T) { return T.Name === 'Gambit 1' && T.Active; });",
-                  "  if (!Found) {",
-                  "    pm.test('TC-008 - gambit table lookup setup succeeds', function () {",
-                  "      throw new Error('Shared gambit table \"Gambit 1\" not found - create it manually first (see test/api/SHARED_SETUP.md)');",
-                  "    });",
-                  "    pm.execution.skipRequest();",
-                  "    return;",
-                  "  }",
-                  "  pm.environment.set('tc008GambitTableId', String(Found.GambitTableId));",
-                  "});"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let Body;",
-                  "",
-                  "pm.test('TC-008 - the Gambit session is created successfully (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-008 - the response contains a generated GambitSessionId with InProgress status and the purchased cards', function () {",
-                  "  Body = pm.response.json();",
-                  "  pm.expect(Body).to.have.property('session');",
-                  "  pm.expect(Body.session).to.have.property('GambitSessionId');",
-                  "  pm.expect(Body.session.Status).to.eql('InProgress');",
-                  "  pm.expect(Body.session.CardsPurchased).to.eql(Number(pm.environment.get('tc008GambitCardsPurchased')));",
-                  "});",
-                  "",
-                  "pm.test('TC-008 - the card cost (CardPrice x CardsPurchased) is debited from the post-Slot-cash-out balance', function () {",
-                  "  Body = Body || pm.response.json();",
-                  "  const BalanceAfterSlotCashOut = Number(pm.environment.get('tc008BalanceAfterSlotCashOut'));",
-                  "  const CardPrice = Number(pm.environment.get('tc008GambitCardPrice'));",
-                  "  const CardsPurchased = Number(pm.environment.get('tc008GambitCardsPurchased'));",
-                  "  pm.expect(Body.currentBalance).to.eql(BalanceAfterSlotCashOut - CardPrice * CardsPurchased);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{tc008PlayerToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"CardsPurchased\": {{tc008GambitCardsPurchased}}\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/gambit-tables/{{tc008GambitTableId}}/sessions",
-              "host": ["{{baseUrl}}"],
-              "path": ["gambit-tables", "{{tc008GambitTableId}}", "sessions"]
-            },
-            "description": "With the Slot session already cashed out, the player starts a Gambit session on the dedicated TC-008 table. CardPrice x CardsPurchased is debited from the balance left over after the Slot cash-out, proving the balance carries over correctly between the two game types."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-008 - Complete and cash out the Gambit session (reward credited, session released)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "function StopSetup(ErrorObject) {",
-                  "  pm.test('TC-008 - Gambit auto-completion setup succeeds', function () {",
-                  "    throw new Error(ErrorObject.message || String(ErrorObject));",
-                  "  });",
-                  "  pm.execution.skipRequest();",
-                  "}",
-                  "",
-                  "const BaseUrl = pm.environment.get('baseUrl');",
-                  "const PlayerToken = pm.environment.get('tc008PlayerToken');",
-                  "if (!PlayerToken) {",
-                  "  StopSetup(new Error('tc008PlayerToken not set - the previous requests in this folder must run first'));",
-                  "}",
-                  "",
-                  "function PickPositions(Unrevealed, Count) {",
-                  "  return Unrevealed.filter(function (C) { return !C.Locked; }).slice(0, Count).map(function (C) { return C.Position; });",
-                  "}",
-                  "",
-                  "function Step(IterationsLeft) {",
-                  "  if (IterationsLeft <= 0) { StopSetup(new Error('Gambit auto-completion exceeded the safety iteration limit')); return; }",
-                  "  pm.sendRequest({",
-                  "    url: BaseUrl + '/gambit/sessions/active',",
-                  "    method: 'GET',",
-                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
-                  "  }, function (ErrorObject, Response) {",
-                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
-                  "    let Session;",
-                  "    try { Session = Response.json(); } catch (ErrorObject) { StopSetup(ErrorObject); return; }",
-                  "    if (Session.Status === 'Finished') { return; }",
-                  "    if (Session.Grid.PendingEvent) {",
-                  "      pm.sendRequest({",
-                  "        url: BaseUrl + '/gambit/sessions/active/resolve-event',",
-                  "        method: 'POST',",
-                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
-                  "        body: { mode: 'raw', raw: JSON.stringify({ GoodIndex: 0, BadIndex: 0 }) }",
-                  "      }, function (ResolveError) {",
-                  "        if (ResolveError) { StopSetup(ResolveError); return; }",
-                  "        Step(IterationsLeft - 1);",
-                  "      });",
-                  "      return;",
-                  "    }",
-                  "    if (Session.Grid.PendingInteraction) {",
-                  "      const Positions = PickPositions(Session.Grid.Unrevealed, Session.Grid.PendingInteraction.RequiredSelections);",
-                  "      pm.sendRequest({",
-                  "        url: BaseUrl + '/gambit/sessions/active/resolve-effect',",
-                  "        method: 'POST',",
-                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
-                  "        body: { mode: 'raw', raw: JSON.stringify({ Positions: Positions }) }",
-                  "      }, function (ResolveError) {",
-                  "        if (ResolveError) { StopSetup(ResolveError); return; }",
-                  "        Step(IterationsLeft - 1);",
-                  "      });",
-                  "      return;",
-                  "    }",
-                  "    const Target = PickPositions(Session.Grid.Unrevealed, 1)[0];",
-                  "    if (Target === undefined) { StopSetup(new Error('No burnable card left but the Gambit session is not Finished')); return; }",
-                  "    pm.sendRequest({",
-                  "      url: BaseUrl + '/gambit/sessions/active/burn/' + Target,",
-                  "      method: 'POST',",
-                  "      header: { Authorization: 'Bearer ' + PlayerToken }",
-                  "    }, function (BurnError) {",
-                  "      if (BurnError) { StopSetup(BurnError); return; }",
-                  "      Step(IterationsLeft - 1);",
-                  "    });",
-                  "  });",
-                  "}",
-                  "",
-                  "if (PlayerToken) { Step(30); }"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let Body;",
-                  "",
-                  "pm.test('TC-008 - the Gambit cash-out succeeds (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-008 - the final balance equals the pre-cash-out balance plus the reward', function () {",
-                  "  Body = pm.response.json();",
-                  "  pm.expect(Body).to.have.property('reward');",
-                  "  pm.expect(Body).to.have.property('finalBalance');",
-                  "  pm.expect(Body.finalBalance).to.be.at.least(Body.reward);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc008PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/gambit/sessions/active/cash-out",
-              "host": ["{{baseUrl}}"],
-              "path": ["gambit", "sessions", "active", "cash-out"]
-            },
-            "description": "Its pre-request script burns every purchased card on the board (auto-resolving any selection event or REVEAL/PEEK_CARDS interaction that comes up along the way) until the session reaches Finished, then this cash-out closes it and releases the shared ActiveSession slot. This is what makes the folder fully self-contained: unlike the Slot leg, the Gambit API has no way for anyone but the session's own player to close a session before all its cards are burned, so leaving this session open would permanently block the next run (terminal or manual) from starting a fresh one."
+            "description": "Player starts a Slot session on the shared 'Slot 1' machine. This is the visible request of the whole scenario; the test script then chains, via internal pm.sendRequest calls, the reroll, the Slot cash-out, the no-active-session check, starting a Gambit session on 'Gambit 1', and fully playing out + cashing out that Gambit session (auto-resolving any selection event or REVEAL/PEEK_CARDS interaction), so the folder always ends with the player free to start a new game. Balance deltas are asserted against the actual cost/reward fields each endpoint returns, not against a hard-coded final number, because both the Slot reward and the Gambit result are randomized."
           },
           "response": []
         }
@@ -1426,10 +1279,10 @@
     },
     {
       "name": "TC-009 - User cannot start two simultaneous slot sessions",
-      "description": "Verifies that a player who already has an active Slot session cannot start a second one. Uses the shared table 'Slot 1', created manually by each developer (see test/api/SHARED_SETUP.md) - nothing in this repo creates it. The player itself IS created live, right here in the first request's pre-request script (self-contained, same pattern as TC-002), so this folder keeps working whether it's run from the terminal (npm run test:api:tc009) or by clicking Send directly in the Postman app.",
+      "description": "Verifies that a player who already has an active Slot session cannot start a second one. Uses the shared table 'Slot 1', created manually by each developer (see test/api/SHARED_SETUP.md) - nothing in this repo creates it. The player itself IS created live, right here in the pre-request script (self-contained, same pattern as TC-002), so this folder keeps working whether it's run from the terminal (npm run test:api:tc009) or by clicking Send directly in the Postman app. Everything (player setup, the first successful session, the rejected second attempt, and the final verification) is consolidated into this single request, matching the single-item pattern used by TC-001 to TC-005 and TC-011 to TC-015: the request shown here IS the second, rejected attempt, so its red 4xx status is what makes this an unhappy-path test visible at a glance in the Runner.",
       "item": [
         {
-          "name": "TC-009 - First slot session starts successfully",
+          "name": "TC-009 - Second slot session attempt is rejected while the first is still active",
           "event": [
             {
               "listen": "prerequest",
@@ -1461,6 +1314,30 @@
                   "      return;",
                   "    }",
                   "    pm.environment.set('tc009SlotMachineId', String(Found.SlotMachineId));",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function StartFirstSession(Callback) {",
+                  "  const PlayerToken = pm.environment.get('tc009PlayerToken');",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/slot-machines/' + pm.environment.get('tc009SlotMachineId') + '/sessions',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PlayerToken },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({",
+                  "      StartedAt: new Date().toISOString(),",
+                  "      LastInteractionAt: new Date().toISOString()",
+                  "    }) }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    let Body;",
+                  "    try { Body = Response.json(); } catch (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    pm.test('TC-009 - the first Slot session is created successfully (201)', function () {",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "      pm.expect(Body).to.have.property('session');",
+                  "      pm.expect(Body.session).to.have.property('SlotSessionId');",
+                  "    });",
+                  "    pm.environment.set('tc009FirstSessionId', String(Body.session.SlotSessionId));",
                   "    Callback();",
                   "  });",
                   "}",
@@ -1503,55 +1380,13 @@
                   "      }",
                   "      pm.environment.set('tc009PlayerToken', Result.Token);",
                   "      pm.environment.set('tc009PlayerEmail', PlayerEmail);",
+                  "      StartFirstSession(function () {});",
                   "    });",
                   "  });",
                   "});"
                 ]
               }
             },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-009 - The first session is created successfully (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-009 - The response contains a generated SlotSessionId', function () {",
-                  "  const Body = pm.response.json();",
-                  "  pm.expect(Body).to.have.property('session');",
-                  "  pm.expect(Body.session).to.have.property('SlotSessionId');",
-                  "  pm.environment.set('tc009FirstSessionId', String(Body.session.SlotSessionId));",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{tc009PlayerToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"StartedAt\": \"{{$isoTimestamp}}\",\n  \"LastInteractionAt\": \"{{$isoTimestamp}}\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/slot-machines/{{tc009SlotMachineId}}/sessions",
-              "host": ["{{baseUrl}}"],
-              "path": ["slot-machines", "{{tc009SlotMachineId}}", "sessions"]
-            },
-            "description": "Player starts a real Slot session on the dedicated test machine. StartedAt and LastInteractionAt are required by CreateSlotSessionDto; EndedAt is nullable and omitted since the session has just started."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-009 - Second slot session attempt is rejected",
-          "event": [
             {
               "listen": "test",
               "script": {
@@ -1573,6 +1408,24 @@
                   "  if (ResponseJson && ResponseJson.SlotSessionId) {",
                   "    pm.expect(String(ResponseJson.SlotSessionId)).to.eql(FirstSessionId);",
                   "  }",
+                  "});",
+                  "",
+                  "pm.sendRequest({",
+                  "  url: pm.environment.get('baseUrl') + '/sessions/active',",
+                  "  method: 'GET',",
+                  "  header: { Authorization: 'Bearer ' + pm.environment.get('tc009PlayerToken') }",
+                  "}, function (ErrorObject, Response) {",
+                  "  pm.test('TC-009 - GET /sessions/active returns 200', function () {",
+                  "    if (ErrorObject) throw ErrorObject;",
+                  "    pm.expect(Response.code).to.eql(200);",
+                  "  });",
+                  "",
+                  "  pm.test('TC-009 - The active session is still the FIRST one created', function () {",
+                  "    const Body = Response.json();",
+                  "    const FirstSessionId = pm.environment.get('tc009FirstSessionId');",
+                  "    pm.expect(Body).to.have.property('SlotSessionId');",
+                  "    pm.expect(String(Body.SlotSessionId)).to.eql(FirstSessionId);",
+                  "  });",
                   "});"
                 ]
               }
@@ -1595,44 +1448,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["slot-machines", "{{tc009SlotMachineId}}", "sessions"]
             },
-            "description": "Same player tries to start a SECOND session (now with a valid body) while the first is still active. This must be rejected. The exact status code is not yet confirmed by Swagger, so this run will reveal it - adjust assertions afterward if needed."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-009 - The original session remains the only active one",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-009 - GET /sessions/active returns 200', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test('TC-009 - The active session is still the FIRST one created', function () {",
-                  "  const Body = pm.response.json();",
-                  "  const FirstSessionId = pm.environment.get('tc009FirstSessionId');",
-                  "  pm.expect(Body).to.have.property('SlotSessionId');",
-                  "  pm.expect(String(Body.SlotSessionId)).to.eql(FirstSessionId);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc009PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/sessions/active",
-              "host": ["{{baseUrl}}"],
-              "path": ["sessions", "active"]
-            },
-            "description": "Confirms that, after the rejected second attempt, the player's active session is still exactly the one created first - proving no second session silently replaced or duplicated it."
+            "description": "Same player tries to start a SECOND session while the first (created in the pre-request script) is still active. This must be rejected (4xx) - that rejection is the visible result of this single request, and the test script also re-checks GET /sessions/active to prove the original session survived untouched."
           },
           "response": []
         }
@@ -1640,10 +1456,10 @@
     },
     {
       "name": "TC-010 - Active session in one game type blocks starting the other",
-      "description": "Verifies the cross-game session lock enforced by SessionRegistryService: ActiveSession has a single unique row per UserId (not per UserId+GameType), so a player with an active Slot session cannot start a Gambit session, and vice versa, until the first one is cashed out. Uses the shared tables 'Slot 1' and 'Gambit 1', created manually by each developer (see test/api/SHARED_SETUP.md) - nothing in this repo creates them. The player itself IS created live, right here in the first request's pre-request script (self-contained, same pattern as TC-002), so this folder keeps working whether it's run from the terminal (npm run test:api:tc010) or by clicking Send directly in the Postman app.",
+      "description": "Verifies the cross-game session lock enforced by SessionRegistryService: ActiveSession has a single unique row per UserId (not per UserId+GameType), so a player with an active Slot session cannot start a Gambit session, and vice versa, until the first one is cashed out. Uses the shared tables 'Slot 1' and 'Gambit 1', created manually by each developer (see test/api/SHARED_SETUP.md) - nothing in this repo creates them. The player itself IS created live, right here in the pre-request script (self-contained, same pattern as TC-002), so this folder keeps working whether it's run from the terminal (npm run test:api:tc010) or by clicking Send directly in the Postman app. Everything is consolidated into this single request, matching the single-item pattern used by TC-001 to TC-005 and TC-011 to TC-015: the visible request IS the second rejection (Slot blocked while Gambit is active), so its red 409 status makes this an unhappy-path test visible at a glance in the Runner - the first rejection (Gambit blocked while Slot is active), the intermediate cash-out, and the final Gambit wrap-up all run as internal pm.sendRequest calls with their own pm.test assertions.",
       "item": [
         {
-          "name": "TC-010 - Player starts a Slot session",
+          "name": "TC-010 - Starting a Slot session while the Gambit session is active is rejected",
           "event": [
             {
               "listen": "prerequest",
@@ -1694,6 +1510,105 @@
                   "  });",
                   "}",
                   "",
+                  "function StartSlotSession(Callback) {",
+                  "  const PlayerToken = pm.environment.get('tc010PlayerToken');",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/slot-machines/' + pm.environment.get('tc010SlotMachineId') + '/sessions',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PlayerToken },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({",
+                  "      StartedAt: new Date().toISOString(),",
+                  "      LastInteractionAt: new Date().toISOString()",
+                  "    }) }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    let Body;",
+                  "    try { Body = Response.json(); } catch (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    pm.test('TC-010 - the Slot session is created successfully (201)', function () {",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "      pm.expect(Body).to.have.property('session');",
+                  "      pm.expect(Body.session).to.have.property('SlotSessionId');",
+                  "      pm.expect(Body.session.Status).to.eql('InProgress');",
+                  "    });",
+                  "    pm.environment.set('tc010SlotSessionId', String(Body.session.SlotSessionId));",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function AttemptGambitWhileSlotActive(Callback) {",
+                  "  const PlayerToken = pm.environment.get('tc010PlayerToken');",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/gambit-tables/' + pm.environment.get('tc010GambitTableId') + '/sessions',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PlayerToken },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ CardsPurchased: 5 }) }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    let Body;",
+                  "    try { Body = Response.json(); } catch (ErrorObject) { Body = null; }",
+                  "    pm.test('TC-010 - starting a Gambit session while the Slot session is active is rejected (409)', function () {",
+                  "      pm.expect(Response.code).to.eql(409);",
+                  "      pm.expect(Body && Body.message).to.include('Você já está em uma partida');",
+                  "    });",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function VerifySlotSessionStillActive(Callback) {",
+                  "  const PlayerToken = pm.environment.get('tc010PlayerToken');",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/sessions/active',",
+                  "    method: 'GET',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    let Body;",
+                  "    try { Body = Response.json(); } catch (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    pm.test('TC-010 - the active session is still the Slot session (the rejected Gambit attempt changed nothing)', function () {",
+                  "      pm.expect(Response.code).to.eql(200);",
+                  "      pm.expect(String(Body.SlotSessionId)).to.eql(pm.environment.get('tc010SlotSessionId'));",
+                  "    });",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function CashOutSlotSession(Callback) {",
+                  "  const PlayerToken = pm.environment.get('tc010PlayerToken');",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/sessions/active/cash-out',",
+                  "    method: 'POST',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    pm.test('TC-010 - the Slot session cash-out succeeds (201)', function () {",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "    });",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
+                  "function StartGambitSession(Callback) {",
+                  "  const PlayerToken = pm.environment.get('tc010PlayerToken');",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/gambit-tables/' + pm.environment.get('tc010GambitTableId') + '/sessions',",
+                  "    method: 'POST',",
+                  "    header: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + PlayerToken },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ CardsPurchased: 5 }) }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    let Body;",
+                  "    try { Body = Response.json(); } catch (ErrorObject) { StopSetup(ErrorObject); return; }",
+                  "    pm.test('TC-010 - after the Slot session ends, starting a Gambit session succeeds (201)', function () {",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "      pm.expect(Body).to.have.property('session');",
+                  "      pm.expect(Body.session).to.have.property('GambitSessionId');",
+                  "      pm.expect(Body.session.Status).to.eql('InProgress');",
+                  "    });",
+                  "    pm.environment.set('tc010GambitSessionId', String(Body.session.GambitSessionId));",
+                  "    Callback();",
+                  "  });",
+                  "}",
+                  "",
                   "// The player is a regular user - unlike the admin, there is a public",
                   "// endpoint to create one, so a fresh one is registered right here on",
                   "// every run (self-contained, same pattern as TC-002), instead of relying",
@@ -1733,6 +1648,15 @@
                   "        }",
                   "        pm.environment.set('tc010PlayerToken', Result.Token);",
                   "        pm.environment.set('tc010PlayerEmail', PlayerEmail);",
+                  "        StartSlotSession(function () {",
+                  "          AttemptGambitWhileSlotActive(function () {",
+                  "            VerifySlotSessionStillActive(function () {",
+                  "              CashOutSlotSession(function () {",
+                  "                StartGambitSession(function () {});",
+                  "              });",
+                  "            });",
+                  "          });",
+                  "        });",
                   "      });",
                   "    });",
                   "  });",
@@ -1740,212 +1664,6 @@
                 ]
               }
             },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let Body;",
-                  "",
-                  "pm.test('TC-010 - the Slot session is created successfully (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-010 - the response contains a generated SlotSessionId with InProgress status', function () {",
-                  "  Body = pm.response.json();",
-                  "  pm.expect(Body).to.have.property('session');",
-                  "  pm.expect(Body.session).to.have.property('SlotSessionId');",
-                  "  pm.expect(Body.session.Status).to.eql('InProgress');",
-                  "  pm.environment.set('tc010SlotSessionId', String(Body.session.SlotSessionId));",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{tc010PlayerToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"StartedAt\": \"{{$isoTimestamp}}\",\n  \"LastInteractionAt\": \"{{$isoTimestamp}}\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/slot-machines/{{tc010SlotMachineId}}/sessions",
-              "host": ["{{baseUrl}}"],
-              "path": ["slot-machines", "{{tc010SlotMachineId}}", "sessions"]
-            },
-            "description": "Player starts a Slot session on the shared 'Slot 1' machine. This active session is what should block a Gambit session from starting next."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-010 - Starting a Gambit session while the Slot session is active is rejected",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let Body;",
-                  "",
-                  "pm.test('TC-010 - the Gambit session attempt does NOT return 201 Created', function () {",
-                  "  pm.expect(pm.response.code).to.not.eql(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-010 - the rejection is a 409 Conflict (one ActiveSession row per user, regardless of game type)', function () {",
-                  "  pm.response.to.have.status(409);",
-                  "});",
-                  "",
-                  "pm.test('TC-010 - the error message explains the active-session conflict', function () {",
-                  "  Body = pm.response.json();",
-                  "  pm.expect(Body.message).to.include('Você já está em uma partida');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{tc010PlayerToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"CardsPurchased\": 5\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/gambit-tables/{{tc010GambitTableId}}/sessions",
-              "host": ["{{baseUrl}}"],
-              "path": ["gambit-tables", "{{tc010GambitTableId}}", "sessions"]
-            },
-            "description": "Same player, still with the Slot session active, tries to start a Gambit session on the shared 'Gambit 1' table. GambitSessionService.Create() also calls SessionRegistryService.acquire() inside its own DB transaction, so this must be rejected and rolled back (no card cost debited, no GambitSession row persisted)."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-010 - The active session is still the Slot session",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-010 - GET /sessions/active returns 200', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test('TC-010 - The active Slot session is still the one created first (the rejected Gambit attempt changed nothing)', function () {",
-                  "  const Body = pm.response.json();",
-                  "  const SlotSessionId = pm.environment.get('tc010SlotSessionId');",
-                  "  pm.expect(Body).to.have.property('SlotSessionId');",
-                  "  pm.expect(String(Body.SlotSessionId)).to.eql(SlotSessionId);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc010PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/sessions/active",
-              "host": ["{{baseUrl}}"],
-              "path": ["sessions", "active"]
-            },
-            "description": "Confirms the rejected Gambit attempt left the original Slot session untouched."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-010 - Cash out the Slot session",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-010 - the cash-out succeeds (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc010PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/sessions/active/cash-out",
-              "host": ["{{baseUrl}}"],
-              "path": ["sessions", "active", "cash-out"]
-            },
-            "description": "Cashes out the Slot session, releasing the shared ActiveSession row so the reverse direction (Gambit active, Slot blocked) can be tested next."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-010 - After the Slot session ends, starting a Gambit session succeeds",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let Body;",
-                  "",
-                  "pm.test('TC-010 - the Gambit session is created successfully (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "pm.test('TC-010 - the response contains a generated GambitSessionId with InProgress status', function () {",
-                  "  Body = pm.response.json();",
-                  "  pm.expect(Body).to.have.property('session');",
-                  "  pm.expect(Body.session).to.have.property('GambitSessionId');",
-                  "  pm.expect(Body.session.Status).to.eql('InProgress');",
-                  "  pm.environment.set('tc010GambitSessionId', String(Body.session.GambitSessionId));",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Authorization", "value": "Bearer {{tc010PlayerToken}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"CardsPurchased\": 5\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/gambit-tables/{{tc010GambitTableId}}/sessions",
-              "host": ["{{baseUrl}}"],
-              "path": ["gambit-tables", "{{tc010GambitTableId}}", "sessions"]
-            },
-            "description": "With the Slot session cashed out and the ActiveSession row released, the same player can now start a Gambit session on the shared 'Gambit 1' table."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-010 - Starting a Slot session while the Gambit session is active is rejected",
-          "event": [
             {
               "listen": "test",
               "script": {
@@ -1964,6 +1682,95 @@
                   "pm.test('TC-010 - the error message explains the active-session conflict', function () {",
                   "  Body = pm.response.json();",
                   "  pm.expect(Body.message).to.include('Você já está em uma partida');",
+                  "});",
+                  "",
+                  "const BaseUrl = pm.environment.get('baseUrl');",
+                  "const PlayerToken = pm.environment.get('tc010PlayerToken');",
+                  "",
+                  "function StopWrapUp(ErrorObject) {",
+                  "  pm.test('TC-010 - Gambit wrap-up succeeds', function () {",
+                  "    throw new Error(ErrorObject.message || String(ErrorObject));",
+                  "  });",
+                  "}",
+                  "",
+                  "function PickPositions(Unrevealed, Count) {",
+                  "  return Unrevealed.filter(function (C) { return !C.Locked; }).slice(0, Count).map(function (C) { return C.Position; });",
+                  "}",
+                  "",
+                  "function CashOutGambit() {",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/gambit/sessions/active/cash-out',",
+                  "    method: 'POST',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    pm.test('TC-010 - the Gambit cash-out succeeds (201)', function () {",
+                  "      if (ErrorObject) throw ErrorObject;",
+                  "      pm.expect(Response.code).to.eql(201);",
+                  "    });",
+                  "  });",
+                  "}",
+                  "",
+                  "function BurnStep(IterationsLeft) {",
+                  "  if (IterationsLeft <= 0) { StopWrapUp(new Error('Gambit auto-completion exceeded the safety iteration limit')); return; }",
+                  "  pm.sendRequest({",
+                  "    url: BaseUrl + '/gambit/sessions/active',",
+                  "    method: 'GET',",
+                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "  }, function (ErrorObject, Response) {",
+                  "    if (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    let Session;",
+                  "    try { Session = Response.json(); } catch (ErrorObject) { StopWrapUp(ErrorObject); return; }",
+                  "    if (Session.Status === 'Finished') { CashOutGambit(); return; }",
+                  "    if (Session.Grid.PendingEvent) {",
+                  "      pm.sendRequest({",
+                  "        url: BaseUrl + '/gambit/sessions/active/resolve-event',",
+                  "        method: 'POST',",
+                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
+                  "        body: { mode: 'raw', raw: JSON.stringify({ GoodIndex: 0, BadIndex: 0 }) }",
+                  "      }, function (ResolveError) {",
+                  "        if (ResolveError) { StopWrapUp(ResolveError); return; }",
+                  "        BurnStep(IterationsLeft - 1);",
+                  "      });",
+                  "      return;",
+                  "    }",
+                  "    if (Session.Grid.PendingInteraction) {",
+                  "      const Positions = PickPositions(Session.Grid.Unrevealed, Session.Grid.PendingInteraction.RequiredSelections);",
+                  "      pm.sendRequest({",
+                  "        url: BaseUrl + '/gambit/sessions/active/resolve-effect',",
+                  "        method: 'POST',",
+                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
+                  "        body: { mode: 'raw', raw: JSON.stringify({ Positions: Positions }) }",
+                  "      }, function (ResolveError) {",
+                  "        if (ResolveError) { StopWrapUp(ResolveError); return; }",
+                  "        BurnStep(IterationsLeft - 1);",
+                  "      });",
+                  "      return;",
+                  "    }",
+                  "    const Target = PickPositions(Session.Grid.Unrevealed, 1)[0];",
+                  "    if (Target === undefined) { StopWrapUp(new Error('No burnable card left but the Gambit session is not Finished')); return; }",
+                  "    pm.sendRequest({",
+                  "      url: BaseUrl + '/gambit/sessions/active/burn/' + Target,",
+                  "      method: 'POST',",
+                  "      header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "    }, function (BurnError) {",
+                  "      if (BurnError) { StopWrapUp(BurnError); return; }",
+                  "      BurnStep(IterationsLeft - 1);",
+                  "    });",
+                  "  });",
+                  "}",
+                  "",
+                  "pm.sendRequest({",
+                  "  url: BaseUrl + '/gambit/sessions/active',",
+                  "  method: 'GET',",
+                  "  header: { Authorization: 'Bearer ' + PlayerToken }",
+                  "}, function (ErrorObject, Response) {",
+                  "  pm.test('TC-010 - the active Gambit session is unaffected by the rejected Slot attempt', function () {",
+                  "    if (ErrorObject) throw ErrorObject;",
+                  "    const GambitBody = Response.json();",
+                  "    pm.expect(String(GambitBody.GambitSessionId)).to.eql(pm.environment.get('tc010GambitSessionId'));",
+                  "    pm.expect(GambitBody.Status).to.eql('InProgress');",
+                  "  });",
+                  "  BurnStep(30);",
                   "});"
                 ]
               }
@@ -1986,149 +1793,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["slot-machines", "{{tc010SlotMachineId}}", "sessions"]
             },
-            "description": "Same player, now with the Gambit session active, tries to start a Slot session on the shared 'Slot 1' machine. SlotSessionService.create() calls the same SessionRegistryService.acquire(), proving the lock works symmetrically in both directions."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-010 - The active Gambit session is unaffected by the rejected Slot attempt",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-010 - GET /gambit/sessions/active returns 200', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test('TC-010 - The active Gambit session is still the one created earlier, still InProgress', function () {",
-                  "  const Body = pm.response.json();",
-                  "  const GambitSessionId = pm.environment.get('tc010GambitSessionId');",
-                  "  pm.expect(String(Body.GambitSessionId)).to.eql(GambitSessionId);",
-                  "  pm.expect(Body.Status).to.eql('InProgress');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc010PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/gambit/sessions/active",
-              "host": ["{{baseUrl}}"],
-              "path": ["gambit", "sessions", "active"]
-            },
-            "description": "Confirms the rejected Slot attempt left the Gambit session untouched. Note GET /sessions/active is Slot-only (SlotSessionService.findActiveSession), so the Gambit session is checked through /gambit/sessions/active instead."
-          },
-          "response": []
-        },
-        {
-          "name": "TC-010 - Complete and cash out the Gambit session",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "function StopSetup(ErrorObject) {",
-                  "  pm.test('TC-010 - Gambit auto-completion setup succeeds', function () {",
-                  "    throw new Error(ErrorObject.message || String(ErrorObject));",
-                  "  });",
-                  "  pm.execution.skipRequest();",
-                  "}",
-                  "",
-                  "const BaseUrl = pm.environment.get('baseUrl');",
-                  "const PlayerToken = pm.environment.get('tc010PlayerToken');",
-                  "if (!PlayerToken) {",
-                  "  StopSetup(new Error('tc010PlayerToken not set - the previous requests in this folder must run first'));",
-                  "}",
-                  "",
-                  "function PickPositions(Unrevealed, Count) {",
-                  "  return Unrevealed.filter(function (C) { return !C.Locked; }).slice(0, Count).map(function (C) { return C.Position; });",
-                  "}",
-                  "",
-                  "function Step(IterationsLeft) {",
-                  "  if (IterationsLeft <= 0) { StopSetup(new Error('Gambit auto-completion exceeded the safety iteration limit')); return; }",
-                  "  pm.sendRequest({",
-                  "    url: BaseUrl + '/gambit/sessions/active',",
-                  "    method: 'GET',",
-                  "    header: { Authorization: 'Bearer ' + PlayerToken }",
-                  "  }, function (ErrorObject, Response) {",
-                  "    if (ErrorObject) { StopSetup(ErrorObject); return; }",
-                  "    let Session;",
-                  "    try { Session = Response.json(); } catch (ErrorObject) { StopSetup(ErrorObject); return; }",
-                  "    if (Session.Status === 'Finished') { return; }",
-                  "    if (Session.Grid.PendingEvent) {",
-                  "      pm.sendRequest({",
-                  "        url: BaseUrl + '/gambit/sessions/active/resolve-event',",
-                  "        method: 'POST',",
-                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
-                  "        body: { mode: 'raw', raw: JSON.stringify({ GoodIndex: 0, BadIndex: 0 }) }",
-                  "      }, function (ResolveError) {",
-                  "        if (ResolveError) { StopSetup(ResolveError); return; }",
-                  "        Step(IterationsLeft - 1);",
-                  "      });",
-                  "      return;",
-                  "    }",
-                  "    if (Session.Grid.PendingInteraction) {",
-                  "      const Positions = PickPositions(Session.Grid.Unrevealed, Session.Grid.PendingInteraction.RequiredSelections);",
-                  "      pm.sendRequest({",
-                  "        url: BaseUrl + '/gambit/sessions/active/resolve-effect',",
-                  "        method: 'POST',",
-                  "        header: { Authorization: 'Bearer ' + PlayerToken, 'Content-Type': 'application/json' },",
-                  "        body: { mode: 'raw', raw: JSON.stringify({ Positions: Positions }) }",
-                  "      }, function (ResolveError) {",
-                  "        if (ResolveError) { StopSetup(ResolveError); return; }",
-                  "        Step(IterationsLeft - 1);",
-                  "      });",
-                  "      return;",
-                  "    }",
-                  "    const Target = PickPositions(Session.Grid.Unrevealed, 1)[0];",
-                  "    if (Target === undefined) { StopSetup(new Error('No burnable card left but the Gambit session is not Finished')); return; }",
-                  "    pm.sendRequest({",
-                  "      url: BaseUrl + '/gambit/sessions/active/burn/' + Target,",
-                  "      method: 'POST',",
-                  "      header: { Authorization: 'Bearer ' + PlayerToken }",
-                  "    }, function (BurnError) {",
-                  "      if (BurnError) { StopSetup(BurnError); return; }",
-                  "      Step(IterationsLeft - 1);",
-                  "    });",
-                  "  });",
-                  "}",
-                  "",
-                  "if (PlayerToken) { Step(30); }"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('TC-010 - the Gambit cash-out succeeds (201)', function () {",
-                  "  pm.response.to.have.status(201);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tc010PlayerToken}}" }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/gambit/sessions/active/cash-out",
-              "host": ["{{baseUrl}}"],
-              "path": ["gambit", "sessions", "active", "cash-out"]
-            },
-            "description": "Its pre-request script burns every purchased card on the board (auto-resolving any selection event or REVEAL/PEEK_CARDS interaction along the way) until the session reaches Finished, then this cash-out closes it and releases the shared ActiveSession slot, leaving the player free to start a new game (same reasoning as TC-008's final step)."
+            "description": "Same player, now with the Gambit session active (started earlier in this same request's pre-request script, after proving the opposite-direction rejection too), tries to start a Slot session on the shared 'Slot 1' machine. This is the visible result of the whole request: a 409 Conflict, proving the ActiveSession lock works symmetrically in both directions. The test script then confirms the Gambit session is unaffected and finishes it (burn loop + cash-out) so the player is left free to start a new game."
           },
           "response": []
         }
