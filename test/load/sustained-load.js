@@ -3,9 +3,80 @@ import { check } from 'k6';
 import { htmlReport } from 'https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js';
 
 const BaseUrl = __ENV.BASE_URL || 'http://localhost:3000';
-const SlotMachineId = __ENV.SLOT_MACHINE_ID || '1';
-const ConfiguredUsers = JSON.parse(__ENV.TEST_USERS || '[]');
-let VuToken = null;
+const DefaultSlotMachineId = __ENV.SLOT_MACHINE_ID || null;
+const TokenCache = new Map();
+
+function resolveSlotMachineId() {
+  if (DefaultSlotMachineId) return String(DefaultSlotMachineId);
+
+  const Response = http.get(`${BaseUrl}/slot/machine`);
+  if (Response.status !== 200) return '1';
+
+  const Machines = Response.json();
+  if (Array.isArray(Machines) && Machines.length > 0) {
+    const ActiveMachine =
+      Machines.find((machine) => machine.Active !== false) || Machines[0];
+    return String(ActiveMachine.SlotMachineId);
+  }
+
+  return '1';
+}
+
+function parseJsonEnv(key, fallback) {
+  try {
+    const RawValue = __ENV[key];
+    if (!RawValue) return fallback;
+    return JSON.parse(RawValue);
+  } catch (error) {
+    return fallback;
+  }
+}
+
+const ConfiguredUsers = parseJsonEnv('TEST_USERS', []);
+
+function registerUser(seed) {
+  const UniqueId = `${Date.now()}-${seed}`;
+  const Registration = http.post(
+    `${BaseUrl}/auth/register`,
+    JSON.stringify({
+      Name: `k6 Load User ${UniqueId}`,
+      BirthDate: '1990-01-01',
+      Nickname: `k6load${UniqueId}`,
+      Email: `k6.load.${UniqueId}@example.test`,
+      Password: 'LoadTest123!',
+      ChipBalance: 10000,
+    }),
+    {
+      headers: { 'Content-Type': 'application/json' },
+      tags: { test: 'sustained-load', flow: 'registration' },
+    }
+  );
+
+  const Token = Registration.json('Token');
+  check(Registration, {
+    'VU registration returns 201': (response) => response.status === 201,
+    'registration returns token': () => !!Token,
+  });
+
+  if (!Token) {
+    throw new Error(`Could not create k6 load-test user for VU ${seed}`);
+  }
+
+  return Token;
+}
+
+function resolveVuToken(vuNumber) {
+  const CachedToken = TokenCache.get(vuNumber);
+  if (CachedToken) return CachedToken;
+
+  const UserPool = Array.isArray(ConfiguredUsers) ? ConfiguredUsers : [];
+  const ConfiguredUser =
+    UserPool.length > 0 ? UserPool[(vuNumber - 1) % UserPool.length] : null;
+  const Token = ConfiguredUser?.token || registerUser(vuNumber);
+
+  TokenCache.set(vuNumber, Token);
+  return Token;
+}
 
 export const options = {
   scenarios: {
@@ -26,49 +97,23 @@ export const options = {
 };
 
 export function setup() {
-  return ConfiguredUsers;
+  return Array.isArray(ConfiguredUsers) ? ConfiguredUsers : [];
 }
 
-export default function (Users) {
-  if (!VuToken) {
-    const ConfiguredUser = Users[(__VU - 1) % Users.length];
-    if (ConfiguredUser?.token) {
-      VuToken = ConfiguredUser.token;
-    } else {
-      const UniqueId = `${Date.now()}-${__VU}`;
-      const Registration = http.post(
-        `${BaseUrl}/auth/register`,
-        JSON.stringify({
-          Name: `k6 Load User ${UniqueId}`,
-          BirthDate: '1990-01-01',
-          Nickname: `k6load${UniqueId}`,
-          Email: `k6.load.${UniqueId}@example.test`,
-          Password: 'LoadTest123!',
-          ChipBalance: 10000,
-        }),
-        {
-          headers: { 'Content-Type': 'application/json' },
-          tags: { test: 'sustained-load', flow: 'registration' },
-        }
-      );
-      VuToken = Registration.json('Token');
-      check(Registration, {
-        'VU registration returns 201': (response) => response.status === 201,
-      });
-      if (!VuToken) return;
-    }
-  }
-
+export default function () {
+  const Token = resolveVuToken(__VU);
   const Params = {
-    headers: { Authorization: `Bearer ${VuToken}` },
+    headers: { Authorization: `Bearer ${Token}` },
     tags: { test: 'sustained-load' },
   };
 
+  const SlotMachineId = resolveSlotMachineId();
   const Start = http.post(
     `${BaseUrl}/slot-machines/${SlotMachineId}/sessions`,
     JSON.stringify({}),
     Params
   );
+
   const Started = check(Start, {
     'slot session returns 201': (response) => response.status === 201,
   });
@@ -76,6 +121,8 @@ export default function (Users) {
   if (!Started) return;
 
   const SessionId = Start.json('session.SlotSessionId');
+  if (!SessionId) return;
+
   const CashOut = http.post(
     `${BaseUrl}/slot-machines/${SlotMachineId}/sessions/${SessionId}/cash-out`,
     null,

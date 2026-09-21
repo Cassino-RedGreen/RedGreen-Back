@@ -26,6 +26,13 @@ const Reports = [
     json: 'test/performance/artifacts/stress-report.json',
     html: 'test/performance/artifacts/stress-report.html',
   },
+  {
+    id: 'vu-scale',
+    title: 'Escala por VUs',
+    script: 'vu-scale.js',
+    json: 'test/performance/artifacts/vu-scale-report.json',
+    html: 'test/performance/artifacts/vu-scale-report.html',
+  },
 ];
 
 let FailedRuns = 0;
@@ -91,6 +98,7 @@ const Combined = `<!doctype html>
   <nav aria-label="Relatorios">
     <button class="tab active" data-target="load">Carga sustentada</button>
     <button class="tab" data-target="stress">Estresse concorrente</button>
+    <button class="tab" data-target="vu-scale">Escala por VUs</button>
   </nav>
   <main>
     ${Reports.map(EmbedReport).join('\n')}
