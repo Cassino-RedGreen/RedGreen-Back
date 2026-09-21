@@ -28,7 +28,9 @@
     "test:api:tc004": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-004 - Bonus diario nao pode ser resgatado mais de uma vez por dia\"",
     "test:api:tc005": "node test/api/run-tc005.cjs",
     "test:api:tc016": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-016\"",
-    "test:api:tc017": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-017\""
+    "test:api:tc017": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-017\"",
+    "test:api:tc018": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-018\"",
+    "test:api:tc019": "newman run test/api/redgreen-api.postman_collection.json -e test/api/redgreen.local.postman_environment.json --folder \"TC-019\""
   },
   "lint-staged": {
     "*.ts": [
