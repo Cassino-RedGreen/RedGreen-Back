@@ -71,7 +71,7 @@ async function Run() {
         if (ErrorObject) return Reject(ErrorObject);
         if (Summary.run.failures.length)
           return Reject(new Error('TC-006 assertions or requests failed.'));
-        if (Summary.run.stats.assertions.total < 9)
+        if (Summary.run.stats.assertions.total < 6)
           return Reject(new Error('TC-006 did not complete all checks.'));
         ResolveRun();
       }

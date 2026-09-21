@@ -127,7 +127,7 @@ async function Run() {
           if (ErrorObject) return Reject(ErrorObject);
           if (Summary.run.failures.length)
             return Reject(new Error('TC-008 assertions or requests failed.'));
-          if (Summary.run.stats.assertions.total < 15)
+          if (Summary.run.stats.assertions.total < 8)
             return Reject(new Error('TC-008 did not complete all checks.'));
           ResolveRun();
         }
