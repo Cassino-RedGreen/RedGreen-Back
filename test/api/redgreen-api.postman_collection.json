@@ -2010,7 +2010,7 @@
       ]
     },
     {
-      "name": "TC-016",
+      "name": "TC-016 - Reauthenticated user recovers and continues active Slot session",
       "item": [
         {
           "name": "TC-016 - Reauthenticated user recovers and continues active Slot session",
@@ -2374,7 +2374,7 @@
       ]
     },
     {
-      "name": "TC-017",
+      "name": "TC-017 - Reauthenticated user recovers and continues active Gambit session",
       "item": [
         {
           "name": "TC-017 - Reauthenticated user recovers and continues active Gambit session",
@@ -2868,7 +2868,7 @@
       ]
     },
     {
-      "name": "TC-018",
+      "name": "TC-018 - Two users can play the same Slot independently",
       "item": [
         {
           "name": "TC-018 - Two users keep independent sessions on the same Slot Machine",
@@ -3289,7 +3289,7 @@
       ]
     },
     {
-      "name": "TC-019",
+      "name": "TC-019 - Two users can play the same Gambit table independently",
       "item": [
         {
           "name": "TC-019 - Two users keep independent sessions on the same Gambit Table",
@@ -3629,7 +3629,7 @@
       ]
     },
     {
-      "name": "TC-020",
+      "name": "TC-020 - Two clients of the same user share the active Slot session state",
       "item": [
         {
           "name": "TC-020 - Two authenticated clients share the same active Slot session",
@@ -3844,7 +3844,7 @@
       ]
     },
     {
-      "name": "TC-021",
+      "name": "TC-021 - Two clients of the same user share the active Gambit session state",
       "item": [
         {
           "name": "TC-021 - Two authenticated clients share the same active Gambit session",
@@ -3951,7 +3951,8 @@
                   "async function burnOne(session, token, label) {",
                   "  check(label + ' starts without a blocking state', () => { pm.expect(session.Status).to.eql('InProgress'); pm.expect(session.Grid.PendingEvent).to.eql(null); pm.expect(session.Grid.PendingInteraction).to.eql(null); }); const target = session.Grid.Unrevealed.find((card) => card.Locked === false); check(label + ' has a valid card available to burn', () => pm.expect(target).to.exist);",
                   "  const response = await callApi('POST', '/gambit/sessions/active/burn/' + target.Position, undefined, token); check(label + ' burn succeeds through the real API', () => pm.expect(response.code).to.eql(201)); const burned = sessionView(response.json()); assertSessionShape(burned, label + ' result');",
-                  "  check(label + ' changes deterministic burn invariants', () => { pm.expect(burned.GambitSessionId).to.eql(session.GambitSessionId); pm.expect(burned.UserId).to.eql(session.UserId); pm.expect(burned.GambitTableId).to.eql(session.GambitTableId); pm.expect(burned.CardsPurchased).to.eql(session.CardsPurchased); pm.expect(burned.BurnSlotsAvailable).to.eql(session.BurnSlotsAvailable); pm.expect(burned.ManualFlipsCount).to.eql(session.ManualFlipsCount + 1); pm.expect(burned.BurnsRemaining).to.eql(Math.max(0, burned.BurnSlotsAvailable - burned.ManualFlipsCount)); pm.expect(burned.Grid.Revealed.length).to.eql(session.Grid.Revealed.length + 1); pm.expect(burned.Grid.Unrevealed.length).to.eql(session.Grid.Unrevealed.length - 1); pm.expect(burned.Grid.Revealed.some((card) => card.Position === target.Position)).to.eql(true); }); return burned;",
+                  "  const revealedCard = burned.Grid.Revealed.find((card) => card.Position === target.Position); const boardSize = session.Grid.Revealed.length + session.Grid.Unrevealed.length; let expectedBurnSlots = session.BurnSlotsAvailable; if (session.NextEffect !== 'ANULACAO_TOTAL' && revealedCard) { if (revealedCard.Effect === 'QUANTO_MAIS_MELHOR') expectedBurnSlots = Math.min(boardSize, session.BurnSlotsAvailable + 1); else if (revealedCard.Effect === 'QUANTO_MENOS_MELHOR') expectedBurnSlots = Math.max(burned.ManualFlipsCount, session.BurnSlotsAvailable - 1); }",
+                  "  check(label + ' changes deterministic burn invariants', () => { pm.expect(burned.GambitSessionId).to.eql(session.GambitSessionId); pm.expect(burned.UserId).to.eql(session.UserId); pm.expect(burned.GambitTableId).to.eql(session.GambitTableId); pm.expect(burned.CardsPurchased).to.eql(session.CardsPurchased); pm.expect(revealedCard).to.exist; pm.expect(burned.BurnSlotsAvailable).to.eql(expectedBurnSlots); pm.expect(burned.ManualFlipsCount).to.eql(session.ManualFlipsCount + 1); pm.expect(burned.BurnsRemaining).to.eql(Math.max(0, burned.BurnSlotsAvailable - burned.ManualFlipsCount)); pm.expect(burned.Grid.Revealed.length).to.eql(session.Grid.Revealed.length + 1); pm.expect(burned.Grid.Unrevealed.length).to.eql(session.Grid.Unrevealed.length - 1); pm.expect(revealedCard.Position).to.eql(target.Position); }); return burned;",
                   "}",
                   "async function finishAndCashOut(token) {",
                   "  const lookup = await callApi('GET', '/gambit/sessions/active', undefined, token); if (lookup.code !== 200) throw new Error('TC-021 cleanup lookup returned ' + lookup.code + '.'); let current = lookup.text().trim() === '' ? null : sessionView(lookup.json());",
@@ -4008,7 +4009,7 @@
       ]
     },
     {
-      "name": "TC-022",
+      "name": "TC-022 - Failed reauthentication does not affect the active Slot session",
       "item": [
         {
           "name": "TC-022 - Invalid reauthentication preserves the active Slot session",
@@ -4114,7 +4115,7 @@
       ]
     },
     {
-      "name": "TC-023",
+      "name": "TC-023 - Invalid token action does not affect the active Gambit session",
       "item": [
         {
           "name": "TC-023 - Invalid JWT action preserves and allows recovery of Gambit session",
