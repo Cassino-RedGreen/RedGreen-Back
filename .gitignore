@@ -87,3 +87,7 @@ target/
 # Temporary files
 tmp/
 temp/
+
+# k6 load-test reports
+test/performance/artifacts/*.json
+test/performance/artifacts/*.html
