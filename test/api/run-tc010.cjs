@@ -1,136 +1,122 @@
-const { resolve } = require('node:path');
-const { existsSync } = require('node:fs');
-const { Client } = require('pg');
-const newman = require('newman');
+const { resolve: Resolve } = require('node:path');
+const { existsSync: ExistsSync } = require('node:fs');
+const Newman = require('newman');
 
-const envPath = resolve(__dirname, '../../.env');
-if (existsSync(envPath)) process.loadEnvFile(envPath);
+const EnvPath = Resolve(__dirname, '../../.env');
+if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
 
 const SLOT_MACHINE_NAME = 'Slot 1';
 const GAMBIT_TABLE_NAME = 'Gambit 1';
+const PLAYER_PASSWORD = 'Tc010Password123!';
 
-async function requireSlotMachine(baseUrl) {
-  const list = await fetch(`${baseUrl}/slot/machine`, {
+async function RequireSlotMachine(BaseUrl) {
+  const List = await fetch(`${BaseUrl}/slot/machine`, {
     signal: AbortSignal.timeout(15000),
   });
-  if (list.status === 200) {
-    const machines = await list.json();
-    const found = machines.find((m) => m.Name === SLOT_MACHINE_NAME && m.Active);
-    if (found) return String(found.SlotMachineId);
+  if (List.status === 200) {
+    const Machines = await List.json();
+    const Found = Machines.find((M) => M.Name === SLOT_MACHINE_NAME && M.Active);
+    if (Found) return String(Found.SlotMachineId);
   }
   throw new Error(
     `Shared slot machine "${SLOT_MACHINE_NAME}" not found - create it manually first (see test/api/SHARED_SETUP.md).`
   );
 }
 
-async function requireGambitTable(baseUrl) {
-  const list = await fetch(`${baseUrl}/gambit-table`, {
+async function RequireGambitTable(BaseUrl) {
+  const List = await fetch(`${BaseUrl}/gambit-table`, {
     signal: AbortSignal.timeout(15000),
   });
-  if (list.status === 200) {
-    const tables = await list.json();
-    const found = tables.find((t) => t.Name === GAMBIT_TABLE_NAME && t.Active);
-    if (found) return String(found.GambitTableId);
+  if (List.status === 200) {
+    const Tables = await List.json();
+    const Found = Tables.find((T) => T.Name === GAMBIT_TABLE_NAME && T.Active);
+    if (Found) return String(Found.GambitTableId);
   }
   throw new Error(
     `Shared gambit table "${GAMBIT_TABLE_NAME}" not found - create it manually first (see test/api/SHARED_SETUP.md).`
   );
 }
 
-async function run() {
-  const environment = require('./redgreen.local.postman_environment.json');
-  const baseUrl =
-    process.env.TC010_BASE_URL ||
-    environment.values.find((v) => v.key === 'baseUrl').value;
-  const host = process.env.POSTGRES_HOST || 'localhost';
-  const localHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
-  if (
-    !localHosts.includes(new URL(baseUrl).hostname) ||
-    !localHosts.includes(host)
-  ) {
-    throw new Error(
-      'TC-010 automatic fixture preparation requires a local API and PostgreSQL.'
-    );
-  }
-  for (const key of ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB']) {
-    if (!process.env[key]) throw new Error(`Missing ${key}`);
-  }
-  const db = new Client({
-    host,
-    port: Number(process.env.POSTGRES_PORT || 5433),
-    user: process.env.POSTGRES_USER,
-    password: process.env.POSTGRES_PASSWORD,
-    database: process.env.POSTGRES_DB,
-    connectionTimeoutMillis: 10000,
+async function DeactivatePlayer(BaseUrl, PlayerEmail) {
+  const Login = await fetch(`${BaseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ Email: PlayerEmail, Password: PLAYER_PASSWORD }),
+    signal: AbortSignal.timeout(15000),
   });
+  if (Login.status !== 200) return false;
+  const { Token } = await Login.json();
+  if (!Token) return false;
+  const Deleted = await fetch(`${BaseUrl}/user`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${Token}` },
+    signal: AbortSignal.timeout(15000),
+  });
+  return Deleted.status === 200;
+}
 
-  await db.connect();
-  let playerEmail;
+async function Run() {
+  const Environment = require('./redgreen.local.postman_environment.json');
+  const BaseUrl =
+    process.env.TC010_BASE_URL ||
+    Environment.values.find((V) => V.key === 'baseUrl').value;
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+  if (!LocalHosts.includes(new URL(BaseUrl).hostname)) {
+    throw new Error('TC-010 requires a local API.');
+  }
+
+  let PlayerEmail;
   try {
-    const slotMachineId = await requireSlotMachine(baseUrl);
-    const gambitTableId = await requireGambitTable(baseUrl);
+    const SlotMachineId = await RequireSlotMachine(BaseUrl);
+    const GambitTableId = await RequireGambitTable(BaseUrl);
     console.log(
-      `TC-010: using the shared "${SLOT_MACHINE_NAME}" (#${slotMachineId}) and "${GAMBIT_TABLE_NAME}" (#${gambitTableId}) tables.`
+      `TC-010: using the shared "${SLOT_MACHINE_NAME}" (#${SlotMachineId}) and "${GAMBIT_TABLE_NAME}" (#${GambitTableId}) tables.`
     );
 
-    await new Promise((resolveRun, reject) => {
-      newman.run(
+    await new Promise((ResolveRun, Reject) => {
+      Newman.run(
         {
           collection: require('./redgreen-api.postman_collection.json'),
-          environment,
+          environment: Environment,
           folder: 'TC-010 - Active session in one game type blocks starting the other',
           reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
           reporter: { json: { export: process.env.TEST_CASE_REPORT } },
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },
-        (error, summary) => {
+        (ErrorObject, Summary) => {
           try {
-            playerEmail = summary?.environment
+            PlayerEmail = Summary?.environment
               ?.toJSON()
-              ?.values?.find((v) => v.key === 'tc010PlayerEmail')?.value;
+              ?.values?.find((V) => V.key === 'tc010PlayerEmail')?.value;
           } catch {
-            playerEmail = undefined;
+            PlayerEmail = undefined;
           }
-          if (error) return reject(error);
-          if (summary.run.failures.length)
-            return reject(new Error('TC-010 assertions or requests failed.'));
-          if (summary.run.stats.assertions.total < 16)
-            return reject(new Error('TC-010 did not complete all checks.'));
-          resolveRun();
+          if (ErrorObject) return Reject(ErrorObject);
+          if (Summary.run.failures.length)
+            return Reject(new Error('TC-010 assertions or requests failed.'));
+          if (Summary.run.stats.assertions.total < 16)
+            return Reject(new Error('TC-010 did not complete all checks.'));
+          ResolveRun();
         }
       );
     });
     console.log(
-      'TC-010: done. Both the rejected cross-type attempts and the final Gambit session were cleanly resolved, so the freshly created player will be removed below.'
+      'TC-010: done. Both the rejected cross-type attempts and the final Gambit session were cleanly resolved, so the freshly created player will be deactivated below.'
     );
   } finally {
-    if (playerEmail) {
-      await db.query(
-        'DELETE FROM "ActiveSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
-        [playerEmail]
-      );
-      await db.query(
-        'DELETE FROM "SlotSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
-        [playerEmail]
-      );
-      await db.query(
-        'DELETE FROM "GambitSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
-        [playerEmail]
-      );
-      const removed = await db.query(
-        'DELETE FROM "User" WHERE "Email" = $1 RETURNING "Email"',
-        [playerEmail]
-      );
-      if (removed.rowCount === 1) {
-        console.log(`TC-010: removed the temporary player (${playerEmail}).`);
+    if (PlayerEmail) {
+      const Deactivated = await DeactivatePlayer(BaseUrl, PlayerEmail);
+      if (Deactivated) {
+        console.log(
+          `TC-010: deactivated the temporary player (${PlayerEmail}) via DELETE /user.`
+        );
       }
     }
-    await db.end();
   }
 }
 
-run().catch((error) => {
-  console.error(error.message);
+Run().catch((ErrorObject) => {
+  console.error(ErrorObject.message);
   process.exitCode = 1;
 });

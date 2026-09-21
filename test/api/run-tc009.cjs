@@ -1,135 +1,127 @@
-const { resolve } = require('node:path');
-const { existsSync, readFileSync, writeFileSync } = require('node:fs');
-const { Client } = require('pg');
-const newman = require('newman');
+const { resolve: Resolve } = require('node:path');
+const {
+  existsSync: ExistsSync,
+  readFileSync: ReadFileSync,
+  writeFileSync: WriteFileSync,
+} = require('node:fs');
+const Newman = require('newman');
 
-const envPath = resolve(__dirname, '../../.env');
-if (existsSync(envPath)) process.loadEnvFile(envPath);
+const EnvPath = Resolve(__dirname, '../../.env');
+if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
 
-const ENVIRONMENT_PATH = resolve(__dirname, './redgreen.local.postman_environment.json');
-
+const EnvironmentPath = Resolve(__dirname, './redgreen.local.postman_environment.json');
 
 const SLOT_MACHINE_NAME = 'Slot 1';
+const PLAYER_PASSWORD = 'Tc009Password123!';
 
-function loadEnvironment() {
-  return JSON.parse(readFileSync(ENVIRONMENT_PATH, 'utf8'));
+function LoadEnvironment() {
+  return JSON.parse(ReadFileSync(EnvironmentPath, 'utf8'));
 }
 
-function saveEnvironment(environment) {
-  writeFileSync(ENVIRONMENT_PATH, JSON.stringify(environment, null, 2) + '\n');
+function SaveEnvironment(Environment) {
+  WriteFileSync(EnvironmentPath, JSON.stringify(Environment, null, 2) + '\n');
 }
 
-function setVar(environment, key, value) {
-  const entry = environment.values.find((v) => v.key === key);
-  if (entry) Object.assign(entry, { value, enabled: true });
-  else environment.values.push({ key, value, enabled: true });
+function SetVar(Environment, Key, Value) {
+  const Entry = Environment.values.find((V) => V.key === Key);
+  if (Entry) Object.assign(Entry, { value: Value, enabled: true });
+  else Environment.values.push({ key: Key, value: Value, enabled: true });
 }
 
-async function requireSlotMachine(baseUrl) {
-  const list = await fetch(`${baseUrl}/slot/machine`, {
+async function RequireSlotMachine(BaseUrl) {
+  const List = await fetch(`${BaseUrl}/slot/machine`, {
     signal: AbortSignal.timeout(15000),
   });
-  if (list.status === 200) {
-    const machines = await list.json();
-    const found = machines.find((m) => m.Name === SLOT_MACHINE_NAME && m.Active);
-    if (found) return String(found.SlotMachineId);
+  if (List.status === 200) {
+    const Machines = await List.json();
+    const Found = Machines.find((M) => M.Name === SLOT_MACHINE_NAME && M.Active);
+    if (Found) return String(Found.SlotMachineId);
   }
   throw new Error(
     `Shared slot machine "${SLOT_MACHINE_NAME}" not found - create it manually first (see test/api/SHARED_SETUP.md).`
   );
 }
 
-async function run() {
-  const environment = loadEnvironment();
-  const baseUrl =
-    process.env.TC009_BASE_URL ||
-    environment.values.find((v) => v.key === 'baseUrl').value;
-  const host = process.env.POSTGRES_HOST || 'localhost';
-  const localHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
-  if (
-    !localHosts.includes(new URL(baseUrl).hostname) ||
-    !localHosts.includes(host)
-  ) {
-    throw new Error(
-      'TC-009 automatic fixture preparation requires a local API and PostgreSQL.'
-    );
-  }
-  for (const key of ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB']) {
-    if (!process.env[key]) throw new Error(`Missing ${key}`);
-  }
-  const db = new Client({
-    host,
-    port: Number(process.env.POSTGRES_PORT || 5433),
-    user: process.env.POSTGRES_USER,
-    password: process.env.POSTGRES_PASSWORD,
-    database: process.env.POSTGRES_DB,
-    connectionTimeoutMillis: 10000,
+async function DeactivatePlayer(BaseUrl, PlayerEmail) {
+  const Login = await fetch(`${BaseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ Email: PlayerEmail, Password: PLAYER_PASSWORD }),
+    signal: AbortSignal.timeout(15000),
   });
+  if (Login.status !== 200) return false;
+  const { Token } = await Login.json();
+  if (!Token) return false;
+  const Deleted = await fetch(`${BaseUrl}/user`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${Token}` },
+    signal: AbortSignal.timeout(15000),
+  });
+  return Deleted.status === 200;
+}
 
-  await db.connect();
-  let playerEmail;
+async function Run() {
+  const Environment = LoadEnvironment();
+  const BaseUrl =
+    process.env.TC009_BASE_URL ||
+    Environment.values.find((V) => V.key === 'baseUrl').value;
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+  if (!LocalHosts.includes(new URL(BaseUrl).hostname)) {
+    throw new Error('TC-009 requires a local API.');
+  }
+
+  let PlayerEmail;
   try {
-    const slotMachineId = await requireSlotMachine(baseUrl);
+    const SlotMachineId = await RequireSlotMachine(BaseUrl);
 
-    setVar(environment, 'baseUrl', baseUrl);
-    saveEnvironment(environment);
-    console.log(`TC-009: using the shared "${SLOT_MACHINE_NAME}" (#${slotMachineId}) table.`);
+    SetVar(Environment, 'baseUrl', BaseUrl);
+    SaveEnvironment(Environment);
+    console.log(`TC-009: using the shared "${SLOT_MACHINE_NAME}" (#${SlotMachineId}) table.`);
 
-    await new Promise((resolveRun, reject) => {
-      newman.run(
+    await new Promise((ResolveRun, Reject) => {
+      Newman.run(
         {
           collection: require('./redgreen-api.postman_collection.json'),
-          environment,
+          environment: Environment,
           folder: 'TC-009 - User cannot start two simultaneous slot sessions',
           reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
           reporter: { json: { export: process.env.TEST_CASE_REPORT } },
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },
-        (error, summary) => {
+        (ErrorObject, Summary) => {
           try {
-            playerEmail = summary?.environment
+            PlayerEmail = Summary?.environment
               ?.toJSON()
-              ?.values?.find((v) => v.key === 'tc009PlayerEmail')?.value;
+              ?.values?.find((V) => V.key === 'tc009PlayerEmail')?.value;
           } catch {
-            playerEmail = undefined;
+            PlayerEmail = undefined;
           }
-          if (error) return reject(error);
-          if (summary.run.failures.length)
-            return reject(new Error('TC-009 assertions or requests failed.'));
-          if (summary.run.stats.assertions.total < 4)
-            return reject(new Error('TC-009 did not complete all checks.'));
-          resolveRun();
+          if (ErrorObject) return Reject(ErrorObject);
+          if (Summary.run.failures.length)
+            return Reject(new Error('TC-009 assertions or requests failed.'));
+          if (Summary.run.stats.assertions.total < 4)
+            return Reject(new Error('TC-009 did not complete all checks.'));
+          ResolveRun();
         }
       );
     });
     console.log(
-      'TC-009: done. The Slot session created by this test is intentionally left active (that is what it tests), so the temporary player is removed below along with it.'
+      'TC-009: done. The Slot session created by this test is intentionally left active (that is what it tests), so the temporary player is deactivated below along with it.'
     );
   } finally {
-    if (playerEmail) {
-
-      await db.query(
-        'DELETE FROM "ActiveSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
-        [playerEmail]
-      );
-      await db.query(
-        'DELETE FROM "SlotSession" WHERE "UserId" IN (SELECT "UserId" FROM "User" WHERE "Email" = $1)',
-        [playerEmail]
-      );
-      const removed = await db.query(
-        'DELETE FROM "User" WHERE "Email" = $1 RETURNING "Email"',
-        [playerEmail]
-      );
-      if (removed.rowCount === 1) {
-        console.log(`TC-009: removed the temporary player (${playerEmail}).`);
+    if (PlayerEmail) {
+      const Deactivated = await DeactivatePlayer(BaseUrl, PlayerEmail);
+      if (Deactivated) {
+        console.log(
+          `TC-009: deactivated the temporary player (${PlayerEmail}) via DELETE /user.`
+        );
       }
     }
-    await db.end();
   }
 }
 
-run().catch((error) => {
-  console.error(error.message);
+Run().catch((ErrorObject) => {
+  console.error(ErrorObject.message);
   process.exitCode = 1;
 });
