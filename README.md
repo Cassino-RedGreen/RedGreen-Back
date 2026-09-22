@@ -84,6 +84,11 @@ Certifique-se de ter instalado em sua máquina:
 
 - **Node.js 24** (a versão é fixada em [`.node-version`](.node-version))
 - **Docker** (para subir o PostgreSQL localmente)
+- **k6** (para rodar os testes de performance em `test/performance/`)
+
+```bash
+winget install k6 --source winget
+```
 
 ---
 
