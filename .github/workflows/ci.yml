@@ -254,76 +254,17 @@ jobs:
       - name: Build
         run: npm run build
 
-  publish-report:
-    name: Publish Report
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: test-e2e
-    # Runs even when test-e2e fails (a failing report is the useful one), but
-    # only for pushes to the default branch and never for cancelled runs.
-    if: >-
-      !cancelled() &&
-      needs.test-e2e.result != 'skipped' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Download test results
-        # Still publishes an index saying "no results" when test-e2e produced
-        # no artifact (e.g. it failed before running the tests).
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: e2e-test-results
-          path: test-results
-
-      - name: Build report site
-        run: node scripts/build-pages-index.cjs
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v6
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: _site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
-
-      - name: Write report link to summary
-        env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-        run: |
-          echo "Published E2E report: [$PAGE_URL]($PAGE_URL)" >> "$GITHUB_STEP_SUMMARY"
-
   load-tests:
     name: Load and Stress Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: test
+    # success() here is required because a custom `if` replaces the default
+    # "needs succeeded" check, so it has to be spelled out explicitly.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      success() &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     services:
       postgres:
         image: postgres:15
@@ -384,45 +325,102 @@ jobs:
 
       - name: Upload load-test reports
         if: always()
+        # The artifacts directory is the upload root, so every report lands at
+        # the top level of the artifact no matter which ones k6 produced. Mixing
+        # in api.log here would move that root and break the layout that
+        # publish-pages expects, so the log is a separate artifact.
         uses: actions/upload-artifact@v4
         with:
           name: k6-load-test-reports
-          path: |
-            test/performance/artifacts/combined-report.html
-            test/performance/artifacts/index.html
-            test/performance/artifacts/load-report.json
-            test/performance/artifacts/load-report.html
-            test/performance/artifacts/stress-report.json
-            test/performance/artifacts/stress-report.html
-            api.log
+          path: test/performance/artifacts/
+          retention-days: 14
           if-no-files-found: warn
 
-  publish-performance-pages:
-    name: Publish Performance Report
+      - name: Upload API log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-api-log
+          path: api.log
+          retention-days: 14
+          if-no-files-found: warn
+
+  # A single Pages deployment for both reports. GitHub allows only one artifact
+  # named "github-pages" and one deployment per run, so the E2E and performance
+  # reports are published together as _site/e2e/ and _site/performance/.
+  publish-pages:
+    name: Publish Reports
     runs-on: ubuntu-latest
-    needs: load-tests
+    timeout-minutes: 10
+    needs: [test-e2e, load-tests]
+    # Runs even when the test jobs fail (a failing report is the useful one),
+    # but only for pushes to the default branch: the github-pages environment
+    # rejects deployments from any other branch.
     if: >-
-      always() &&
-      needs.load-tests.result != 'skipped' &&
-      needs.load-tests.result != 'cancelled'
+      !cancelled() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      (needs.test-e2e.result != 'skipped' || needs.load-tests.result != 'skipped')
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      # Both downloads tolerate a missing artifact: the site builder writes a
+      # "no results" section for whichever one did not run.
+      - name: Download E2E results
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: e2e-test-results
+          path: test-results
+
       - name: Download performance reports
-        uses: actions/download-artifact@v4
+        continue-on-error: true
+        uses: actions/download-artifact@v8
         with:
           name: k6-load-test-reports
-          path: .
+          path: test/performance/artifacts
+
+      - name: Build report site
+        env:
+          PERFORMANCE_RESULT: ${{ needs.load-tests.result }}
+        run: node scripts/build-pages-index.cjs
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
-          path: test/performance/artifacts
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
+
+      - name: Write report links to summary
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          {
+            echo "Published reports: [$PAGE_URL]($PAGE_URL)"
+            echo ""
+            echo "- E2E: ${PAGE_URL}e2e/"
+            echo "- Load and stress: ${PAGE_URL}performance/"
+          } >> "$GITHUB_STEP_SUMMARY"
