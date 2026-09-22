@@ -1,6 +1,7 @@
 # Red & Green Cassino - API Backend
 
 [![CI/CD](https://github.com/Cassino-RedGreen/RedGreen-Back/actions/workflows/ci.yml/badge.svg)](https://github.com/Cassino-RedGreen/RedGreen-Back/actions/workflows/ci.yml)
+[![GitHub Pages](https://img.shields.io/github/deployments/Cassino-RedGreen/RedGreen-Back/github-pages?label=github%20pages)](https://cassino-redgreen.github.io/RedGreen-Back/)
 
 Responsável por gerenciar toda a inteligência e segurança do cassino, garantindo que a lógica dos jogos, a geração de números aleatórios (RNG) e as transações de fichas ocorram em um ambiente seguro e isolado.
 
