@@ -102,6 +102,7 @@
     "globals": "^16.0.0",
     "husky": "^9.1.7",
     "jest": "^30.5.1",
+    "jest-junit": "^17.0.0",
     "lint-staged": "^16.4.0",
     "newman": "6.2.2",
     "newman-reporter-htmlextra": "^1.23.1",
@@ -158,20 +159,52 @@
       "json",
       "ts"
     ],
-    "rootDir": "test",
+    "rootDir": ".",
+    "roots": [
+      "<rootDir>/src",
+      "<rootDir>/test"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "src/**/*.ts"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "<rootDir>/reports/unit/coverage",
+    "coverageReporters": [
+      "text",
+      "text-summary",
+      "lcov",
+      "cobertura"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 90,
+        "branches": 90,
+        "functions": 90,
+        "lines": 90
+      }
+    },
+    "reporters": [
+      "default",
+      [
+        "jest-junit",
+        {
+          "outputDirectory": "<rootDir>/reports/unit",
+          "outputName": "junit.xml",
+          "suiteName": "Testes unitarios",
+          "classNameTemplate": "{classname}",
+          "titleTemplate": "{title}",
+          "addFileAttribute": "true"
+        }
+      ]
+    ],
     "moduleNameMapper": {
-      "^@core/(.*)$": "<rootDir>/../src/core/$1",
-      "^@modules/(.*)$": "<rootDir>/../src/modules/$1",
-      "^@config/(.*)$": "<rootDir>/../src/config/$1",
-      "^@/(.*)$": "<rootDir>/../src/$1"
+      "^@core/(.*)$": "<rootDir>/src/core/$1",
+      "^@modules/(.*)$": "<rootDir>/src/modules/$1",
+      "^@config/(.*)$": "<rootDir>/src/config/$1",
+      "^@/(.*)$": "<rootDir>/src/$1"
     },
     "testEnvironment": "node"
   }
