@@ -1,0 +1,60 @@
+name: redgreen-jenkins
+
+services:
+  # Jenkins: executa o Jenkinsfile. Admin, credenciais e job sao criados pelo JCasC (casc.yaml) na subida.
+  # Usa o Docker do host pelo socket para buildar imagens e subir a stack de testes de cada build.
+  jenkins:
+    build:
+      context: .
+      dockerfile: ../docker/Dockerfile.jenkins
+    image: redgreen-jenkins:local
+    restart: unless-stopped
+    ports:
+      - "${JENKINS_PORT:-8080}:8080"
+    group_add:
+      - "${DOCKER_SOCKET_GID:-0}"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_PUBLIC_URL: http://localhost:${JENKINS_PORT:-8080}/
+      DOCKERHUB_USERNAME: ${DOCKERHUB_USERNAME:-}
+      DOCKERHUB_REPO: ${DOCKERHUB_REPO:-}
+      EMAIL_TO: ${EMAIL_TO:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+    secrets:
+      - jenkins_admin_password
+      - dockerhub_token
+      - postgres_password
+      - jwt_secret
+      - smtp_password
+    depends_on:
+      - mailpit
+
+  # Mailpit: servidor SMTP de teste. Recebe os e-mails do pipeline em mailpit:1025 (rede interna)
+  # e mostra tudo na interface web, sem enviar nada para fora.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+volumes:
+  jenkins_home:
+
+secrets:
+  jenkins_admin_password:
+    environment: JENKINS_ADMIN_PASSWORD
+  dockerhub_token:
+    environment: DOCKERHUB_TOKEN
+  postgres_password:
+    environment: POSTGRES_PASSWORD
+  jwt_secret:
+    environment: JWT_SECRET
+  smtp_password:
+    environment: SMTP_PASSWORD

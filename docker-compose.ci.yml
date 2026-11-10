@@ -1,0 +1,65 @@
+# Stack efemera de cada build do Jenkins. Sempre usada junto com o compose base:
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml -p <projeto-do-build> ...
+
+services:
+  # Mesmo postgres do compose base, sem nome fixo, sem porta no host e sem restart,
+  # para cada build ter um banco isolado que nao conflita com o ambiente de dev.
+  postgres:
+    container_name: !reset null
+    ports: !reset []
+    restart: "no"
+
+  # API buildada pelo pipeline. A mesma tag e testada no E2E e publicada no Docker Hub.
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: ${DOCKERHUB_REPO:-redgreen-back-api}:${IMAGE_TAG:-latest}
+    environment:
+      PORT: 3000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-redgreen}
+      POSTGRES_SSL: "false"
+      JWT_SECRET: ${JWT_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  # Testes unitarios com cobertura (npm run test:cov). Relatorios ficam em /app/reports.
+  unit-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.unit-tests
+    volumes:
+      - unit_reports:/app/reports
+
+  # Testes E2E (Newman). Compartilha a rede da API, entao o localhost:3000 do Postman e a propria API.
+  e2e-tests:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.e2e-tests
+    network_mode: "service:api"
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - e2e_results:/app/test-results
+
+volumes:
+  unit_reports:
+  e2e_results:
