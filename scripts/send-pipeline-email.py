@@ -14,43 +14,39 @@ from urllib.parse import unquote
 
 REQUIRED_VARS = ("EMAIL_TO", "EMAIL_FROM", "SMTP_HOST", "SMTP_PORT")
 JUNIT_PATTERNS = ("reports/unit/junit.xml", "test-results/**/junit-*.xml")
-STATUS_LABELS = {
-    "SUCCESS": "SUCESSO",
-    "FAILURE": "FALHA",
-    "UNSTABLE": "INSTAVEL",
-    "ABORTED": "ABORTADO",
-    "NOT_BUILT": "NAO EXECUTADO",
-}
+STATUS_COLORS = {"SUCCESS": "#1a7f37", "FAILURE": "#cf222e", "UNSTABLE": "#9a6700"}
 
 
 def parse_args():
     env = os.environ.get
-    parser = argparse.ArgumentParser(description="Envia o e-mail de resultado do pipeline.")
+    parser = argparse.ArgumentParser(description="Send the pipeline result email.")
     parser.add_argument("--job", default=env("JOB_NAME", "RedGreen-Back"))
     parser.add_argument("--build-number", default=env("BUILD_NUMBER", "-"))
-    parser.add_argument("--status", default=env("BUILD_STATUS", "DESCONHECIDO"))
+    parser.add_argument("--status", default=env("BUILD_STATUS", "UNKNOWN"))
+    parser.add_argument("--failed-stage", default=env("FAILED_STAGE", ""))
     parser.add_argument("--branch", default=env("BRANCH_NAME") or env("GIT_BRANCH", "-"))
     parser.add_argument("--commit", default=env("GIT_COMMIT", "-"))
     parser.add_argument("--duration", default=env("BUILD_DURATION", "-"))
     parser.add_argument("--url", default=env("BUILD_URL", "-"))
-    parser.add_argument("--image", default=env("PUBLISHED_IMAGE") or "nao publicada neste build")
+    parser.add_argument("--image", default=env("PUBLISHED_IMAGE") or "not published in this build")
     parser.add_argument("--workspace", default=env("WORKSPACE", "."))
     args = parser.parse_args()
     args.job = unquote(args.job)
+    args.status = args.status.upper()
     return args
 
 
 def load_smtp_config():
     missing = [name for name in REQUIRED_VARS if not os.environ.get(name, "").strip()]
     if missing:
-        raise ValueError("variaveis obrigatorias ausentes: " + ", ".join(missing))
+        raise ValueError("missing required variables: " + ", ".join(missing))
     try:
         port = int(os.environ["SMTP_PORT"])
     except ValueError:
-        raise ValueError(f"SMTP_PORT invalida: {os.environ['SMTP_PORT']!r}") from None
+        raise ValueError(f"invalid SMTP_PORT: {os.environ['SMTP_PORT']!r}") from None
     recipients = [item.strip() for item in os.environ["EMAIL_TO"].split(",") if item.strip()]
     if not recipients:
-        raise ValueError("EMAIL_TO nao contem nenhum endereco")
+        raise ValueError("EMAIL_TO has no addresses")
     return {
         "host": os.environ["SMTP_HOST"].strip(),
         "port": port,
@@ -70,7 +66,7 @@ def summarize_tests(workspace):
             try:
                 root = ET.parse(path).getroot()
             except (ET.ParseError, OSError) as error:
-                print(f"Aviso: nao foi possivel ler {path}: {error}", file=sys.stderr)
+                print(f"Warning: could not read {path}: {error}", file=sys.stderr)
                 continue
             suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
             for suite in suites:
@@ -81,48 +77,55 @@ def summarize_tests(workspace):
 
 
 def build_message(args, smtp, totals, files):
-    status = STATUS_LABELS.get(args.status.upper(), args.status.upper())
     passed = totals["tests"] - totals["failures"] - totals["errors"] - totals["skipped"]
     if files:
         tests_line = (
-            f"{totals['tests']} testes: {passed} passaram, {totals['failures']} falharam, "
-            f"{totals['errors']} com erro, {totals['skipped']} ignorados"
+            f"{totals['tests']} tests: {passed} passed, {totals['failures']} failed, "
+            f"{totals['errors']} errors, {totals['skipped']} skipped"
         )
     else:
-        tests_line = "nenhum relatorio JUnit encontrado neste build"
+        tests_line = "no JUnit report found in this build"
 
     rows = [
         ("Job", args.job),
         ("Build", f"#{args.build_number}"),
-        ("Status", status),
+        ("Status", args.status),
+    ]
+    if args.status != "SUCCESS":
+        rows.append(("Failed stage", args.failed_stage or "-"))
+    rows += [
         ("Branch", args.branch),
         ("Commit", args.commit),
-        ("Duracao", args.duration),
-        ("Imagem publicada", args.image),
-        ("Testes", tests_line),
-        ("Relatorios lidos", ", ".join(files) if files else "-"),
-        ("Detalhes", args.url),
+        ("Duration", args.duration),
+        ("Published image", args.image),
+        ("Tests", tests_line),
+        ("Reports read", ", ".join(files) if files else "-"),
+        ("Details", args.url),
     ]
 
-    text = [f"Resultado do pipeline {args.job} #{args.build_number}: {status}", ""]
+    text = [f"Pipeline {args.job} #{args.build_number}: {args.status}", ""]
     text += [f"{label}: {value}" for label, value in rows]
-    text += ["", "Mensagem automatica enviada pelo Jenkins."]
+    text += ["", "Automated message sent by Jenkins."]
 
-    color = {"SUCESSO": "#1a7f37", "FALHA": "#cf222e", "INSTAVEL": "#9a6700"}.get(status, "#57606a")
+    color = STATUS_COLORS.get(args.status, "#57606a")
     table = "\n".join(
         f"<tr><th align='left' style='padding:4px 12px 4px 0'>{html.escape(label)}</th>"
         f"<td style='padding:4px 0'>{html.escape(str(value))}</td></tr>"
         for label, value in rows
     )
     body_html = f"""<html><body style="font-family:Arial,sans-serif">
-<h2 style="color:{color}">Pipeline {html.escape(args.job)} #{html.escape(str(args.build_number))}: {html.escape(status)}</h2>
+<h2 style="color:{color}">Pipeline {html.escape(args.job)} #{html.escape(str(args.build_number))}: {html.escape(args.status)}</h2>
 <table>{table}</table>
-<p><a href="{html.escape(args.url)}">Abrir o build no Jenkins</a></p>
-<p style="color:#57606a;font-size:12px">Mensagem automatica enviada pelo Jenkins.</p>
+<p><a href="{html.escape(args.url)}">Open the build in Jenkins</a></p>
+<p style="color:#57606a;font-size:12px">Automated message sent by Jenkins.</p>
 </body></html>"""
 
+    subject = f"[Jenkins] {args.job} #{args.build_number} - {args.status}"
+    if args.status != "SUCCESS" and args.failed_stage:
+        subject += f" ({args.failed_stage})"
+
     message = EmailMessage()
-    message["Subject"] = f"[Jenkins] {args.job} #{args.build_number} - {status}"
+    message["Subject"] = subject
     message["From"] = smtp["sender"]
     message["To"] = ", ".join(smtp["recipients"])
     message["Date"] = formatdate(localtime=True)
@@ -150,7 +153,7 @@ def main():
     try:
         smtp = load_smtp_config()
     except ValueError as error:
-        print(f"Erro de configuracao do e-mail: {error}.", file=sys.stderr)
+        print(f"Email configuration error: {error}.", file=sys.stderr)
         return 2
 
     totals, files = summarize_tests(args.workspace)
@@ -158,10 +161,10 @@ def main():
     try:
         send(message, smtp)
     except (smtplib.SMTPException, OSError) as error:
-        print(f"Falha ao enviar e-mail via {smtp['host']}:{smtp['port']}: {error}", file=sys.stderr)
+        print(f"Failed to send email via {smtp['host']}:{smtp['port']}: {error}", file=sys.stderr)
         return 1
 
-    print(f"E-mail enviado para {', '.join(smtp['recipients'])} via {smtp['host']}:{smtp['port']}.")
+    print(f"Email sent to {', '.join(smtp['recipients'])} via {smtp['host']}:{smtp['port']}.")
     return 0
 
 

@@ -108,8 +108,11 @@ Na página de cada build:
 | `SMTP_PASSWORD`           | não         | Vem da credencial `smtp-password`                |
 | `SMTP_STARTTLS`           | não         | `true` para STARTTLS. Porta `465` usa SSL direto |
 
-Dados do build (job, número, status, branch, commit, duração, URL, imagem publicada) vêm das variáveis do Jenkins,
-e o resumo de testes é lido dos JUnit XML. Códigos de saída: `0` enviado, `2` configuração faltando, `1` erro de SMTP.
+O e-mail é escrito em inglês. Dados do build (job, número, status, branch, commit, duração, URL, imagem publicada)
+vêm das variáveis do Jenkins, e o resumo de testes é lido dos JUnit XML. Quando o build falha, o e-mail mostra a
+etapa que falhou (`Failed stage`), também incluída no assunto. Cada etapa do `Jenkinsfile` registra o próprio nome
+em `FAILED_STAGE` no `post { failure }`, pela função `markFailedStage()`; se mais de uma etapa paralela falhar,
+todas aparecem (ex.: `Lint, Audit`). Códigos de saída: `0` enviado, `2` configuração faltando, `1` erro de SMTP.
 O Jenkinsfile só registra um aviso se o e-mail falhar, sem alterar o resultado do build.
 
 Teste manual (dentro do container do Jenkins):

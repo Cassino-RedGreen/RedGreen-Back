@@ -25,7 +25,7 @@ pipeline {
           env.API_IMAGE = env.DOCKERHUB_REPO ?: 'redgreen-back-api'
           env.DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
         }
-        echo "Projeto compose: ${env.COMPOSE_PROJECT_NAME} | imagem: ${env.API_IMAGE}:${env.IMAGE_TAG}"
+        echo "Compose project: ${env.COMPOSE_PROJECT_NAME} | image: ${env.API_IMAGE}:${env.IMAGE_TAG}"
         sh '''
           node --version
           npm --version
@@ -35,11 +35,21 @@ pipeline {
           mkdir -p reports test-results package
         '''
       }
+      post {
+        failure {
+          markFailedStage()
+        }
+      }
     }
 
     stage('Install Dependencies') {
       steps {
         sh 'npm ci --no-audit --no-fund'
+      }
+      post {
+        failure {
+          markFailedStage()
+        }
       }
     }
 
@@ -49,15 +59,30 @@ pipeline {
           steps {
             sh 'npm run lint:check'
           }
+          post {
+            failure {
+              markFailedStage()
+            }
+          }
         }
         stage('Format') {
           steps {
             sh 'npm run format:check'
           }
+          post {
+            failure {
+              markFailedStage()
+            }
+          }
         }
         stage('Audit') {
           steps {
             sh 'npm audit --audit-level=high'
+          }
+          post {
+            failure {
+              markFailedStage()
+            }
           }
         }
       }
@@ -68,10 +93,15 @@ pipeline {
         sh 'docker compose build unit-tests'
         script {
           def status = sh(returnStatus: true, script: 'docker compose run -T --name "$COMPOSE_PROJECT_NAME-unit" unit-tests')
-          sh 'docker cp "$COMPOSE_PROJECT_NAME-unit:/app/reports/." reports/ || echo "Aviso: relatorios unitarios nao encontrados."'
+          sh 'docker cp "$COMPOSE_PROJECT_NAME-unit:/app/reports/." reports/ || echo "Warning: unit test reports not found."'
           if (status != 0) {
-            error("Testes unitarios ou cobertura minima de 90% falharam (codigo ${status}).")
+            error("Unit tests or the 90% coverage threshold failed (exit code ${status}).")
           }
+        }
+      }
+      post {
+        failure {
+          markFailedStage()
         }
       }
     }
@@ -87,6 +117,11 @@ pipeline {
           tar -czf "redgreen-back-$IMAGE_TAG.tar.gz" -C package .
         '''
       }
+      post {
+        failure {
+          markFailedStage()
+        }
+      }
     }
 
     stage('E2E Tests') {
@@ -99,12 +134,17 @@ pipeline {
           sh 'docker compose up -d --no-build --wait --wait-timeout 180 api'
           script {
             def status = sh(returnStatus: true, script: 'docker compose run -T --no-deps --name "$COMPOSE_PROJECT_NAME-e2e" e2e-tests')
-            sh 'docker cp "$COMPOSE_PROJECT_NAME-e2e:/app/test-results/." test-results/ || echo "Aviso: resultados E2E nao encontrados."'
+            sh 'docker cp "$COMPOSE_PROJECT_NAME-e2e:/app/test-results/." test-results/ || echo "Warning: E2E test results not found."'
             if (status != 0) {
               sh 'docker compose logs --no-color --tail 200 api'
-              error("Testes E2E falharam (codigo ${status}).")
+              error("E2E tests failed (exit code ${status}).")
             }
           }
+        }
+      }
+      post {
+        failure {
+          markFailedStage()
         }
       }
     }
@@ -116,7 +156,7 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
           sh '''
-            : "${DOCKERHUB_REPO:?Defina DOCKERHUB_REPO no .env do Jenkins (ex.: usuario/redgreen-back)}"
+            : "${DOCKERHUB_REPO:?Set DOCKERHUB_REPO in the Jenkins .env (e.g. user/redgreen-back)}"
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
             docker push "$API_IMAGE:$IMAGE_TAG"
             docker tag "$API_IMAGE:$IMAGE_TAG" "$API_IMAGE:latest"
@@ -124,7 +164,12 @@ pipeline {
           '''
         }
         script {
-          env.PUBLISHED_IMAGE = "${env.API_IMAGE}:${env.IMAGE_TAG} (e latest)"
+          env.PUBLISHED_IMAGE = "${env.API_IMAGE}:${env.IMAGE_TAG} (and latest)"
+        }
+      }
+      post {
+        failure {
+          markFailedStage()
         }
       }
     }
@@ -146,7 +191,7 @@ pipeline {
           ]) {
             def status = sh(returnStatus: true, script: 'python3 scripts/send-pipeline-email.py')
             if (status != 0) {
-              echo "Aviso: o e-mail de notificacao nao foi enviado (codigo ${status}). O resultado do build nao foi alterado."
+              echo "Warning: notification email was not sent (exit code ${status}). The build result was not changed."
             }
           }
         }
@@ -164,4 +209,8 @@ pipeline {
       cleanWs()
     }
   }
+}
+
+def markFailedStage() {
+  env.FAILED_STAGE = env.FAILED_STAGE ? "${env.FAILED_STAGE}, ${env.STAGE_NAME}" : env.STAGE_NAME
 }
