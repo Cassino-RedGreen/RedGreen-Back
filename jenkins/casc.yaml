@@ -1,0 +1,77 @@
+jenkins:
+  systemMessage: "RedGreen-Back CI: configurado por JCasC (jenkins/casc.yaml). Mudancas feitas pela interface sao sobrescritas no proximo restart."
+  numExecutors: 2
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_USER}"
+          password: "${jenkins_admin_password}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "${JENKINS_PUBLIC_URL}"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: dockerhub
+              description: "Docker Hub (usuario + access token)"
+              username: "${DOCKERHUB_USERNAME}"
+              password: "${dockerhub_token}"
+          - string:
+              scope: GLOBAL
+              id: postgres-password
+              description: "Senha do Postgres da stack de testes E2E"
+              secret: "${postgres_password}"
+          - string:
+              scope: GLOBAL
+              id: jwt-secret
+              description: "JWT_SECRET da API na stack de testes E2E"
+              secret: "${jwt_secret}"
+          - string:
+              scope: GLOBAL
+              id: smtp-password
+              description: "Senha do SMTP (vazia para o Mailpit)"
+              secret: "${smtp_password:-}"
+
+jobs:
+  - script: >
+      multibranchPipelineJob('RedGreen-Back') {
+        description('Pipeline do backend RedGreen. Criado automaticamente pelo JCasC + Job DSL.')
+        branchSources {
+          branchSource {
+            source {
+              git {
+                id('redgreen-back-git')
+                remote('https://github.com/Cassino-RedGreen/RedGreen-Back.git')
+                traits {
+                  gitBranchDiscovery()
+                }
+              }
+            }
+          }
+        }
+        factory {
+          workflowBranchProjectFactory {
+            scriptPath('Jenkinsfile')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(5)
+          }
+        }
+        triggers {
+          periodicFolderTrigger {
+            interval('5m')
+          }
+        }
+      }
