@@ -58,6 +58,7 @@ type ManagerMock = {
 
 type QueryRunnerMock = {
   connect: jest.Mock;
+  isTransactionActive: boolean;
   startTransaction: jest.Mock;
   commitTransaction: jest.Mock;
   rollbackTransaction: jest.Mock;
@@ -82,6 +83,7 @@ const MockManagerForCashOut: ManagerMock = {
 
 const MockQueryRunner: QueryRunnerMock = {
   connect: jest.fn(),
+  isTransactionActive: true,
   startTransaction: jest.fn(),
   commitTransaction: jest.fn(),
   rollbackTransaction: jest.fn(),

@@ -49,6 +49,10 @@
     "test:api:tc024": "node test/api/run-newman-case.cjs TC024 \"TC-024 - Concurrent Slot cash-out rejects duplicate payout\"",
     "test:api:tc025": "node test/api/run-newman-case.cjs TC025 \"TC-025 - Concurrent Gambit cash-out rejects duplicate payout\"",
     "test:api": "npm run test:api:tc001 && npm run test:api:tc002 && npm run test:api:tc003 && npm run test:api:tc004 && npm run test:api:tc005 && npm run test:api:tc011 && npm run test:api:tc012 && npm run test:api:tc013 && npm run test:api:tc014 && npm run test:api:tc015 && npm run test:api:tc016 && npm run test:api:tc017 && npm run test:api:tc018 && npm run test:api:tc019 && npm run test:api:tc020 && npm run test:api:tc021 && npm run test:api:tc022 && npm run test:api:tc023 && npm run test:api:tc024 && npm run test:api:tc025",
+    "test:load": "k6 run --out json=test/performance/artifacts/load-report.json test/performance/sustained-load.js",
+    "test:stress": "k6 run --out json=test/performance/artifacts/stress-report.json test/performance/session-concurrency.js",
+    "test:performance": "node test/performance/run-all.cjs",
+    "test:vu-scale": "k6 run --out json=test/performance/artifacts/vu-scale-report.json test/performance/vu-scale.js",
     "postinstall": "node scripts/patch-newman.cjs",
     "test:tooling": "node --test test/tooling/newman-compat.test.cjs"
   },

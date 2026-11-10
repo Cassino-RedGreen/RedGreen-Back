@@ -1,5 +1,8 @@
 # Red & Green Cassino - API Backend
 
+[![CI/CD](https://github.com/Cassino-RedGreen/RedGreen-Back/actions/workflows/ci.yml/badge.svg)](https://github.com/Cassino-RedGreen/RedGreen-Back/actions/workflows/ci.yml)
+[![GitHub Pages](https://img.shields.io/github/deployments/Cassino-RedGreen/RedGreen-Back/github-pages?label=github%20pages)](https://cassino-redgreen.github.io/RedGreen-Back/)
+
 Responsável por gerenciar toda a inteligência e segurança do cassino, garantindo que a lógica dos jogos, a geração de números aleatórios (RNG) e as transações de fichas ocorram em um ambiente seguro e isolado.
 
 ---
@@ -23,7 +26,7 @@ Responsável por gerenciar toda a inteligência e segurança do cassino, garanti
 - [Dinâmica de Desenvolvimento](#dinâmica-de-desenvolvimento)
 - [Refatorações](#refatorações)
 - [Autores](#autores)
-- [Prompts](#prompts)
+- [Uso de IA](#Uso-de-IA)
 
 ---
 
@@ -39,18 +42,18 @@ Responsável por gerenciar toda a inteligência e segurança do cassino, garanti
 
 ## Tecnologias e Ferramentas
 
-| Categoria                    | Ferramentas                                      |
-| ---------------------------- | ------------------------------------------------ |
-| **Core**                     | NestJS 11, TypeScript                            |
-| **Banco de Dados / ORM**     | PostgreSQL, TypeORM                              |
-| **Autenticação**             | JWT (`@nestjs/jwt`), Passport                    |
-| **Validação**                | class-validator, class-transformer               |
-| **Documentação**             | Swagger (OpenAPI)                                |
-| **Testes**                   | Jest, Supertest                                  |
-| **Qualidade e Padronização** | ESLint, Prettier, Husky, Commitlint, lint-staged |
-| **CI/CD**                    | GitHub Actions                                   |
-| **Deploy**                   | Render (API) + Neon (PostgreSQL)                 |
-| **Infraestrutura Local**     | Docker / Docker Compose                          |
+| Categoria                    | Ferramentas                                         |
+| ---------------------------- | --------------------------------------------------- |
+| **Core**                     | NestJS 11, TypeScript                               |
+| **Banco de Dados / ORM**     | PostgreSQL, TypeORM                                 |
+| **Autenticação**             | JWT (`@nestjs/jwt`), Passport                       |
+| **Validação**                | class-validator, class-transformer                  |
+| **Documentação**             | Swagger (OpenAPI)                                   |
+| **Testes**                   | Jest, ts-jest, Newman/Postman, node:test, Supertest |
+| **Qualidade e Padronização** | ESLint, Prettier, Husky, Commitlint, lint-staged    |
+| **CI/CD**                    | GitHub Actions                                      |
+| **Deploy**                   | Render (API) + Neon (PostgreSQL)                    |
+| **Infraestrutura Local**     | Docker / Docker Compose                             |
 
 ---
 
@@ -81,6 +84,11 @@ Certifique-se de ter instalado em sua máquina:
 
 - **Node.js 24** (a versão é fixada em [`.node-version`](.node-version))
 - **Docker** (para subir o PostgreSQL localmente)
+- **k6** (para rodar os testes de performance em `test/performance/`)
+
+```bash
+winget install k6 --source winget
+```
 
 ---
 
@@ -101,7 +109,7 @@ npm install
 #### 3. Suba o container do banco (Docker)
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 #### 4. Inicie o servidor do NestJS
@@ -146,7 +154,7 @@ Definidas no `.env` (veja o template em [`.env.example`](.env.example)). A aplic
 | `npm run build`        | Compila o projeto (`nest build`).                   |
 | `npm test`             | Executa os testes unitários (Jest).                 |
 | `npm run test:cov`     | Executa os testes com relatório de cobertura.       |
-| `npm run test:e2e`     | Executa os testes end-to-end.                       |
+| `npm run test:e2e`     | Configuração Jest E2E, ainda sem casos.             |
 | `npm run lint`         | Roda o ESLint corrigindo automaticamente (`--fix`). |
 | `npm run lint:check`   | Roda o ESLint apenas verificando (usado no CI).     |
 | `npm run format`       | Formata o código com o Prettier (`--write`).        |
@@ -168,11 +176,32 @@ RedGreen-Back/
 │       ├── gambit/             # Jogo Gambit (motor de cartas) + sessões
 │       └── sessions/           # Sessão única por usuário (lock de plataforma)
 │
-├── test/                       # Testes (Jest)
-├── .github/workflows/ci.yml    # Pipeline de CI/CD (pipeline-as-code)
-├── docker-compose.yml          # Container do PostgreSQL (local)
-├── .node-version               # Versão do Node (24)
-└── nest-cli.json               # Configurações do compilador
+└── test/
+    ├── api/
+    │   ├── reports/
+    │   ├── api-report-path.cjs
+    │   ├── redgreen-api.postman_collection.json
+    │   ├── redgreen.local.postman_environment.json
+    │   ├── run-api-case.cjs
+    │   ├── run-newman-case.cjs
+    │   ├── run-tc003.cjs
+    │   ├── run-tc005.cjs
+    │   ├── run-tc006.cjs
+    │   ├── run-tc007.cjs
+    │   ├── run-tc008.cjs
+    │   ├── run-tc009.cjs
+    │   └── run-tc010.cjs
+    │
+    ├── tooling/
+    ├── app.controller.spec.ts
+    ├── auth.service.spec.ts
+    ├── gambit-session.service.spec.ts
+    ├── gambit-table.service.spec.ts
+    ├── jest-e2e.json
+    ├── session-management.spec.ts
+    ├── session-registry.service.spec.ts
+    ├── slot-machine.service.spec.ts
+    └── slot-session.service.spec.ts
 ```
 
 Cada módulo segue o padrão de camadas `domain/` · `application/` · `presentation/`.
@@ -181,75 +210,217 @@ Cada módulo segue o padrão de camadas `domain/` · `application/` · `presenta
 
 ## Pipeline de CI/CD
 
-A pipeline é definida como código no workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) e executada pelo **GitHub Actions**, em runners `ubuntu-latest` hospedados pelo próprio GitHub.
+O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executa no GitHub Actions com Node definido em [`.node-version`](.node-version), cache npm e instalação por `npm ci`. O badge no topo abre as execuções do workflow.
 
-- **Gatilho:** todo _push_ em qualquer branch e _Pull Requests_ vindas de forks (uma PR da própria origem já é coberta pelo push da sua branch, evitando build duplicado).
-- **Visibilidade:** o resultado aparece como check no GitHub, ao lado do commit e dentro da PR.
-- **Node:** lido de [`.node-version`](.node-version) pelo `actions/setup-node`, com cache de dependências do npm.
-- **Concorrência:** um push novo cancela o build anterior ainda em execução na mesma branch.
+Os gatilhos são pushes em qualquer branch, PRs de forks e execução manual. PRs internas são cobertas pelo push para evitar execuções duplicadas. Um novo evento na mesma referência cancela a execução anterior.
 
-### Jobs e etapas
+| Job              | Validação                                                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lint`           | ESLint: `npm run lint:check`.                                                                                                                        |
+| `format`         | Prettier: `npm run format:check`.                                                                                                                    |
+| `audit`          | Dependências: `npm audit --audit-level=high`.                                                                                                        |
+| `test`           | Testes unitários Jest e compatibilidade Newman com `node:test`.                                                                                      |
+| `build`          | Após os quatro jobs anteriores, compila TypeScript com `npm run build`.                                                                              |
+| `Publish Report` | Após os cinco jobs anteriores, o relatorio é gerado e o link segue no badge do readme`.                                                              |
+| `api`            | Sobe PostgreSQL via Docker Compose e API compilada; executa os 25 cenários com `npm run test:all`. Publica logs e relatórios mesmo em caso de falha. |
+| `ci`             | Consolida o sucesso do build e dos testes de API.                                                                                                    |
+| `deploy`         | Depende de `ci`; dispara o Deploy Hook do Render apenas em push na `main`.                                                                           |
 
-| Job / Step                    | O que faz                                          | Quando roda                  |
-| ----------------------------- | -------------------------------------------------- | ---------------------------- |
-| **ci** · Install dependencies | `npm ci` (com `HUSKY=0`)                           | sempre                       |
-| **ci** · Audit dependencies   | `npm audit --audit-level=high`                     | sempre                       |
-| **ci** · Lint                 | `npm run lint:check` (ESLint)                      | sempre                       |
-| **ci** · Check formatting     | `npm run format:check` (Prettier)                  | sempre                       |
-| **ci** · Unit tests           | `npm test` (Jest)                                  | sempre                       |
-| **ci** · Build                | `npm run build` (`nest build`)                     | sempre                       |
-| **deploy**                    | Dispara o deploy no Render (POST no _Deploy Hook_) | **apenas em push na `main`** |
+### Evolução do CI e dos Relatórios — PR #10
 
-Os steps rodam **em ordem** — se qualquer um falha, o job aborta e o deploy **não acontece**. O job `deploy` declara `needs: ci` e é filtrado por `if: github.ref == 'refs/heads/main'`, então PRs e demais branches rodam **só o CI** (sem deploy). O runner é efêmero: cada execução começa numa máquina limpa.
+A [PR #10 — ci: added test e2e job](https://github.com/Cassino-RedGreen/RedGreen-Back/pull/10), na branch `ci/add-test-e2e-job`, propõe as mudanças abaixo. **Ainda pendentes de integração na `main`**, elas descrevem o workflow dessa PR e não substituem a configuração atual documentada acima. Referência revisada: commit `286ba23`.
 
-### Secrets necessários
+| Recurso                   | Comportamento proposto na PR                                                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Job `test-e2e`            | Executa `npm run test:all` contra a API real, após lint, formatação e auditoria. O nome E2E se refere à suite Newman, não ao comando Jest `test:e2e`.                              |
+| Banco e API no CI         | PostgreSQL 15 como serviço Docker do GitHub Actions; compila e inicia a API, aguardando a rota raiz responder antes dos testes.                                                    |
+| Ordem de validação        | Jest e Newman rodam em jobs paralelos após os checks iniciais; o job final `build` depende do sucesso de ambos.                                                                    |
+| Relatórios adicionais     | Adiciona `newman-reporter-htmlextra` e exportação JUnit, além dos logs e JSON existentes. Os nomes previstos são `report-test-api-tcNNN.html` e `junit-test-api-tcNNN.xml`.        |
+| Resumo no Actions         | `scripts/write-e2e-summary.cjs` escreve no resumo da execução: resultado, requisições, assertions, duração por cenário e detalhes das falhas.                                      |
+| Artefato para download    | `e2e-test-results`, com retenção de 14 dias; o upload é tentado mesmo quando os testes falham.                                                                                     |
+| Publicação dos relatórios | `publish-report` gera o site em `_site/` e publica no GitHub Pages em pushes na `main`, inclusive quando a suite falha, desde que não tenha sido ignorada ou a execução cancelada. |
 
-| Secret               | Onde configurar                              | Para que serve                                        |
-| -------------------- | -------------------------------------------- | ----------------------------------------------------- |
-| `RENDER_DEPLOY_HOOK` | _Settings → Secrets and variables → Actions_ | URL do Deploy Hook do Render, usada pelo job `deploy` |
+#### Configuração exigida pela PR
+
+Em **Settings → Secrets and variables → Actions**, configure os valores usados pelo serviço PostgreSQL e pela API do runner:
+
+| Tipo     | Nome                | Configuração                                                                        |
+| -------- | ------------------- | ----------------------------------------------------------------------------------- |
+| Variable | `PORT`              | Porta da API; use `3000` para corresponder ao `baseUrl` padrão do ambiente Postman. |
+| Variable | `POSTGRES_HOST`     | `localhost`, para acessar o serviço Docker pelo runner.                             |
+| Variable | `POSTGRES_PORT`     | Porta publicada no runner, por exemplo `5433`; o container usa internamente `5432`. |
+| Variable | `POSTGRES_USER`     | Usuário criado no PostgreSQL de testes.                                             |
+| Variable | `POSTGRES_DB`       | Banco criado no PostgreSQL de testes.                                               |
+| Variable | `POSTGRES_SSL`      | `false` para o serviço local de testes.                                             |
+| Secret   | `POSTGRES_PASSWORD` | Senha do PostgreSQL de testes.                                                      |
+| Secret   | `JWT_SECRET`        | Segredo para assinatura dos tokens da API no CI.                                    |
+
+O job verifica se os valores estão preenchidos sem imprimi-los. Para publicar os relatórios, configure **Settings → Pages → Build and deployment → Source: GitHub Actions**. O job usa o ambiente `github-pages` e permissões `pages: write` e `id-token: write`; o link publicado aparece no resumo da execução.
+
+#### Consulta dos resultados após a integração
+
+Na aba **Actions**, abra a execução para consultar o resumo ou baixar `e2e-test-results`. O site gerado por `scripts/build-pages-index.cjs` mostra resultado por cenário, requisições, assertions aprovadas, duração e links para os relatórios HTML disponíveis, além de data, commit e execução.
+
+O site publica somente o índice e os arquivos `report-*.html`; JSON, JUnit e logs permanecem no artefato. O reporter HTML usa `skipSensitiveData`. Se não houver resultados, o site informa essa ausência; cenários sem HTML aparecem sem link para relatório.
+
+A PR altera o agregador e o runner compartilhado para exportar os novos formatos. Como os runners desta branch já evoluíram, a integração deve conferir a geração de HTML/JUnit em cada cenário e conciliar `test-e2e` com o job `api` atual, evitando executar a mesma suite duas vezes. Os scripts de resumo e publicação citados nesta seção pertencem à PR e ainda não estão disponíveis nesta branch.
 
 ---
 
-## Deploy
+### Deploy
 
-O deploy é **disparado pela própria pipeline**, somente quando o CI passa na branch `main`.
+Configure o secret `RENDER_DEPLOY_HOOK` em **Settings → Secrets and variables → Actions** e desative o auto-deploy do serviço Render para que a publicação dependa do CI. Sem o secret, a etapa informa que o deploy não está configurado e não envia a requisição.
 
-| Componente         | Serviço                                          | Observação                                                                                               |
-| ------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| **API**            | [Render](https://render.com) (Web Service)       | _Auto-deploy desligado_ — o deploy é acionado pelo job **deploy** do GitHub Actions via **Deploy Hook**. |
-| **Banco de Dados** | [Neon](https://neon.com) (PostgreSQL serverless) | Persiste os dados; a API conecta via `POSTGRES_*` com `POSTGRES_SSL=true`.                               |
-
-**Fluxo:** merge na `main` → job **ci** passa (Lint, Tests, Build) → job **deploy** faz `curl` no Render Deploy Hook → o Render reconstrói e publica a nova versão.
+O POST no hook solicita o deploy; o sucesso desse passo não confirma que a publicação no Render terminou. A API utiliza PostgreSQL no Neon em produção, com `POSTGRES_SSL=true` e as demais variáveis `POSTGRES_*` configuradas no serviço.
 
 ---
 
 ## Testes
 
-Execute todos os cenários automatizados Newman/Postman com um único comando:
+Há três suites: testes unitários com **Jest**, testes HTTP com **Newman/Postman** e testes de compatibilidade das ferramentas com **node:test**. Os cenários de API cobrem fluxos de sucesso, rejeições e concorrência usando a API e o banco reais.
+
+> **Testadores de caixa cinza:** os integrantes que elaboraram e executaram os testes automatizados atuaram como testadores de caixa cinza, pois tinham conhecimento parcial da estrutura interna da aplicação. Esse conhecimento sobre a API, as regras de negócio e os dados de teste foi utilizado para definir os cenários e validar os resultados.
+
+### Testes unitários e funcionalidades cobertas
+
+A configuração Jest fica em [package.json](package.json): ambiente `node`, transformação TypeScript com `ts-jest`, aliases de importação e arquivos `test/*.spec.ts`. Repositórios, transações e dependências são simulados por injeção de dependência; essa suite não exige PostgreSQL.
+
+| Arquivo                                                                   | Funcionalidades verificadas                                                                              |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [auth.service.spec.ts](test/auth.service.spec.ts)                         | Perfil sem senha, atualização de dados e validações do usuário.                                          |
+| [slot-machine.service.spec.ts](test/slot-machine.service.spec.ts)         | Criação, edição, remoção e validação de cores de mesas Slot.                                             |
+| [slot-session.service.spec.ts](test/slot-session.service.spec.ts)         | Cálculo de prêmios, geração de símbolos, criação de sessão, reroll e cash-out.                           |
+| [gambit-table.service.spec.ts](test/gambit-table.service.spec.ts)         | Criação, consulta, edição, remoção e desativação de mesas Gambit.                                        |
+| [gambit-session.service.spec.ts](test/gambit-session.service.spec.ts)     | Multiplicadores, tabuleiro, queima de cartas, efeitos, eventos e liquidação da partida.                  |
+| [session-registry.service.spec.ts](test/session-registry.service.spec.ts) | Aquisição e liberação da sessão única de plataforma.                                                     |
+| [session-management.spec.ts](test/session-management.spec.ts)             | Conflito de sessões, tratamento de concorrência e desativação administrativa com pagamento ou reembolso. |
+| [app.controller.spec.ts](test/app.controller.spec.ts)                     | Resposta da rota raiz.                                                                                   |
 
 ```bash
+npm test -- --runInBand
+npm run test:watch
+npm run test:cov -- --runInBand
+npm test -- --runInBand slot-session.service.spec.ts
+npm run test:tooling
+```
+
+A cobertura instrumenta o código de `src/` e é gravada em `coverage/` (relatório HTML em `coverage/lcov-report/index.html`). Os testes de [compatibilidade Newman](test/tooling/newman-compat.test.cjs) verificam as adaptações aplicadas por [patch-newman.cjs](scripts/patch-newman.cjs), incluindo variáveis dinâmicas do Postman e idempotência do patch executado no `postinstall`.
+
+### Cenários automatizados de API
+
+A coleção [redgreen-api.postman_collection.json](test/api/redgreen-api.postman_collection.json) contém **25 cenários**, cada um selecionado por pasta. O ambiente local fica em [redgreen.local.postman_environment.json](test/api/redgreen.local.postman_environment.json).
+
+| Caso     | Funcionalidade / resultado esperado                                       | Condições e recursos utilizados                                                                        |
+| :------- | :------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------- |
+| `TC-001` | Acesso a jogos sem autenticação é recusado.                               | API real; chamadas às rotas de jogo sem token de autenticação.                                         |
+| `TC-002` | Jogador comum não pode executar funções administrativas.                  | API real; jogador comum tenta acessar operações restritas a administradores.                           |
+| `TC-003` | Administrador consegue executar funções restritas.                        | API real e conta administradora; preparação e limpeza da mesa por HTTP.                                |
+| `TC-004` | Bônus diário não pode ser resgatado duas vezes no mesmo dia.              | API real; duas tentativas de resgate do bônus diário pela mesma conta.                                 |
+| `TC-005` | Um jogador não pode usar a sessão de outro.                               | API real; dois jogadores e tentativa de acesso à sessão pertencente ao outro.                          |
+| `TC-006` | Administrador cria e configura uma mesa ativa.                            | API local e administrador do seed; cria uma mesa Slot e a remove ao final.                             |
+| `TC-007` | Ranking exibe os jogadores na ordem esperada de saldo.                    | API local; cria 12 jogadores com saldos distintos e verifica a ordem e o limite de 10 posições.        |
+| `TC-008` | Conclusão de Slot e entrada no Gambit com o saldo atualizado.             | API local, novo jogador e mesas Slot 1 e Gambit 1; confere saldo após giro, reroll e cash-outs.        |
+| `TC-009` | Bloqueio de duas sessões simultâneas de Slot para o mesmo usuário.        | API local, novo jogador e mesa Slot 1; tenta abrir outra sessão com uma partida ativa.                 |
+| `TC-010` | Sessão ativa em um jogo bloqueia a entrada no outro.                      | API local e mesas Slot 1 e Gambit 1; verifica o bloqueio de troca de jogo nos dois sentidos.           |
+| `TC-011` | Bônus completa o saldo mínimo e libera a sessão de Slot.                  | API real; compara o saldo e a elegibilidade para iniciar a sessão antes e depois do bônus.             |
+| `TC-012` | Exclusão de mesa somente após o cash-out administrativo.                  | API real e operações administrativas; verifica a exclusão da mesa após encerrar as sessões.            |
+| `TC-013` | Reroll cobra o valor da mesa e é recusado sem saldo ou tentativas.        | API real; verifica o débito do reroll e as rejeições por saldo ou tentativas esgotadas.                |
+| `TC-014` | Gambit não expõe cartas ainda não reveladas.                              | API real; inspeciona as respostas da sessão para verificar a ocultação das cartas.                     |
+| `TC-015` | Edição da mesa afeta sessões futuras e preserva a configuração da atual.  | API real; altera a mesa durante uma partida e compara a sessão atual com uma posterior.                |
+| `TC-016` | Reautenticação recupera e permite continuar a sessão de Slot.             | API real; novo login da mesma conta, recuperação do estado e continuidade da partida Slot.             |
+| `TC-017` | Reautenticação recupera e permite continuar a sessão de Gambit.           | API real; novo login da mesma conta, recuperação do estado e continuidade da partida Gambit.           |
+| `TC-018` | Dois jogadores usam a mesma mesa de Slot com estados independentes.       | API real; duas contas jogam na mesma mesa Slot e mantêm sessões independentes.                         |
+| `TC-019` | Dois jogadores usam a mesma mesa de Gambit com estados independentes.     | API real; duas contas jogam na mesma mesa Gambit e mantêm sessões independentes.                       |
+| `TC-020` | Dois clientes do mesmo usuário compartilham o estado da sessão de Slot.   | API real; dois clientes autenticados na mesma conta consultam e alteram a sessão Slot.                 |
+| `TC-021` | Dois clientes do mesmo usuário compartilham o estado da sessão de Gambit. | API real; dois clientes autenticados na mesma conta consultam e alteram a sessão Gambit.               |
+| `TC-022` | Falha de reautenticação preserva a sessão de Slot.                        | API real; tentativa de login inválida durante uma partida Slot e conferência do estado preservado.     |
+| `TC-023` | Ação com token inválido preserva a sessão de Gambit.                      | API real; requisição com token inválido durante uma partida Gambit e conferência do estado preservado. |
+| `TC-024` | Cash-outs concorrentes de Slot não duplicam o pagamento.                  | API real; envia cash-outs concorrentes para a mesma sessão Slot e verifica pagamento único.            |
+| `TC-025` | Cash-outs concorrentes de Gambit não duplicam o pagamento.                | API real; envia cash-outs concorrentes para a mesma sessão Gambit e verifica pagamento único.          |
+
+Execute qualquer caso com `npm run test:api:tcNNN`, substituindo `NNN` pelo número com três dígitos.
+
+### Preparação e execução
+
+1. Instale as dependências com `npm ci` e copie `.env.example` para `.env`.
+2. Inicie PostgreSQL com `docker compose up -d --wait`.
+3. Em outro terminal, execute `npm run start:dev` e aguarde a API em `http://localhost:3000`.
+4. Confira o seed e o ambiente Postman conforme as instruções abaixo.
+5. Execute a suite ou um cenário individual:
+
+```bash
+# Todos os 25 casos, continua após falhas e consolida resultados
 npm run test:all
+
+# Todos os 25 casos, interrompe na primeira falha
+npm run test:api
+
+# Um caso individual
+npm run test:api:tc024
 ```
 
-O comando executa apenas os cenários `test:api:*` em sequência, continuando mesmo
-quando um cenário falha. Ao final, soma as estatísticas dos relatórios Newman em
-uma única tabela com colunas `executed` e `failed` e linhas `iterations`,
-`requests`, `test-scripts`, `prerequest-scripts` e `assertions`.
-Testes Jest e de ferramentas não entram nessa execução.
-Os logs completos e o resumo `summary.json` ficam em `test-results/<execução>/`.
-O comando retorna código 1 se qualquer cenário falhar. Relatórios ausentes ou
-inválidos são informados como erro e os totais são identificados como parciais.
+`test:all` descobre todos os scripts `test:api:*` em `package.json` e os executa sequencialmente. Não inclui Jest nem testes de ferramentas. TC-003 e TC-005 fazem preparação e limpeza por HTTP, sem acesso direto ao PostgreSQL. TC-006 a TC-010 exigem uma URL local; alguns desses runners atualizam o arquivo de ambiente Postman, portanto execute a suite em sequência.
 
-Para os cenários de API, inicie previamente o PostgreSQL via Docker Compose e a
-API local, com o `.env` configurado. Os cenários TC-003 e TC-005 utilizam também
-acesso direto ao banco local.
+#### Seed e ambiente Postman
 
-Os testes são escritos com **Jest** (unitários, com mocks de repositórios e transações — não exigem banco real).
+A inicialização executa [DatabaseSeedService](src/core/database/database-seed.service.ts), que cria ou atualiza o administrador e as mesas oficiais. `npm run seed` também executa esse processo. O seed reaplica configurações, saldo e senha do administrador; não o execute durante uma suite.
+
+| Recurso               | Valores usados no ambiente local                                              |
+| --------------------- | ----------------------------------------------------------------------------- |
+| API                   | `http://localhost:3000`                                                       |
+| Administrador do seed | `admin@admin.com` / `admin123`                                                |
+| Slot 1                | Ativa; saldo mínimo 100, giro 10 e reroll 5.                                  |
+| Gambit 1              | Ativa; saldo mínimo 100, carta 10, multiplicador 1 e compra de 5 a 20 cartas. |
+| Outras mesas oficiais | Slot 2, Slot 3, Gambit 2 e Gambit 3.                                          |
+
+O ambiente [redgreen.local.postman_environment.json](test/api/redgreen.local.postman_environment.json) deve apontar para essa API em `baseUrl`. Confira `adminEmail`/`adminPassword`, `tc003AdminEmail`/`tc003AdminPassword` e `tc005AdminEmail`/`tc005AdminPassword` com as credenciais do administrador local. As credenciais acima são dados de desenvolvimento do seed existente.
+
+TC-003 e TC-005 aceitam sobrescritas `TC003_BASE_URL`, `TC003_ADMIN_EMAIL`, `TC003_ADMIN_PASSWORD` e os equivalentes `TC005_*` no ambiente do processo ou `.env`. O runner genérico dos demais casos lê diretamente o ambiente Postman, sem aplicar essas sobrescritas. TC-006 a TC-010 aceitam `TCNNN_BASE_URL`, mas exigem host local; mantenha `baseUrl` do JSON igual ao endereço escolhido.
+
+TC-008 a TC-010 procuram mesas ativas pelos nomes `Slot 1` e/ou `Gambit 1`. Se não forem encontradas, confira o seed e a conexão da API com o PostgreSQL do Docker Compose (porta local padrão 5433).
+
+Revise o diff do ambiente Postman após os testes antes de versionar alterações feitas pelos runners.
+
+### Relatórios de navegador no GitHub Pages — frontend
+
+A [PR #9 do frontend — Ci/e2e report GitHub pages](https://github.com/Cassino-RedGreen/RedGreen-Front/pull/9) adiciona um site para consultar os testes E2E do **Playwright**, complementando os resultados Newman da API. A PR estava aberta na revisão do commit `f625212`; os comandos e arquivos desta seção pertencem ao **RedGreen-Front**.
+
+**Acesso:** [relatório E2E do frontend](https://cassino-redgreen.github.io/RedGreen-Front/) — endereço informado na PR para a publicação no GitHub Pages.
+
+| Conteúdo             | O que consultar                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| Página inicial       | Indicadores gerais e uma linha por cenário.                                                    |
+| `report-TC-XXX.html` | Resultado do caso, informações do arquivo, tempos, resumo por navegador e detalhes das falhas. |
+| Evidências           | Screenshots e vídeos disponíveis para cada execução.                                           |
+| `report/index.html`  | Relatório completo gerado pelo Playwright.                                                     |
+| Artefatos do Actions | `playwright-report` e `playwright-test-results`, com retenção de 7 dias no workflow da PR.     |
+
+#### Preparação local com o backend
+
+1. Inicie o PostgreSQL e a API conforme [Preparação e execução](#preparação-e-execução). O seed do backend prepara o administrador e as mesas utilizadas pelos testes.
+2. No **frontend**, copie `.env.example` para `.env` e configure a conexão com a API. Preencha `E2E_ADMIN_EMAIL` e `E2E_ADMIN_PASSWORD` com a conta administradora do ambiente de teste. Segundo a PR, sem essas credenciais os casos TC-004, TC-005, TC-006, TC-007 e TC-009 são ignorados.
+3. Com as alterações da PR disponíveis no checkout do **frontend**, execute nessa pasta:
 
 ```bash
-# todos os testes
-npm test
+npm run test:e2e
+npm run report:site
 ```
+
+O gerador `scripts/BuildReportSite.mjs` usa módulos nativos do Node para ler `playwright-report/results.json` e as evidências de `test-results/`, produzindo o site em `_site/`. A pasta gerada é ignorada pelo Git. Após uma execução com falhas, o site também pode ser gerado a partir dos resultados disponíveis.
+
+#### Publicação e acompanhamento
+
+No repositório **RedGreen-Front**, configure **Settings → Pages → Build and deployment → Source: GitHub Actions**. O job `pages`, exibido como **Publish E2E Report**, roda depois de `e2e` na referência `main`, inclusive quando os testes falham, desde que o job E2E não tenha sido cancelado ou ignorado. A PR adiciona `workflow_dispatch` para execução manual; a publicação também exige selecionar `main`.
+
+Acompanhe o job na aba **Actions** e abra o endereço do ambiente `github-pages`. A publicação depende do artefato `playwright-report`; a ausência do artefato opcional de evidências não interrompe seu download como etapa obrigatória. O workflow revisado não inicia o backend nem configura as credenciais E2E: a disponibilidade da API e dessas credenciais continua sendo um pré-requisito dos cenários que usam integração real.
+
+### Relatórios e limites da cobertura
+
+`test:all` salva logs por caso, relatórios Newman JSON e `summary.json` em `test-results/<execução>/`. O terminal mostra totais `executed` e `failed` para iterations, requests, test-scripts, prerequest-scripts e assertions. Falhas ou relatórios ausentes/inválidos retornam código 1; totais incompletos são identificados como parciais. Os runners com [api-report-path.cjs](test/api/api-report-path.cjs) também salvam relatórios individuais automaticamente; TC-006 a TC-010 recebem o destino JSON pelo agregador via `TEST_CASE_REPORT`.
+
+Use uma base destinada a testes: os cenários criam contas, alteram saldo e mesas e nem todos removem todos os registros. Desativação de conta preserva histórico. Testes unitários com mocks não comprovam locks reais; TC-024 e TC-025 exercitam requisições concorrentes contra a API para verificar pagamento único.
+
+`npm run test:e2e` possui configuração Jest em [jest-e2e.json](test/jest-e2e.json), mas ainda não há arquivos `*.e2e-spec.ts`: o comando termina com “No tests found”. A integração HTTP automatizada existente é executada pelos cenários Newman acima. Os testes de navegador ficam no repositório do frontend.
 
 ---
 
@@ -277,11 +448,6 @@ Localmente: `http://localhost:3000/api`.
 - **Dado** que informo um e-mail já cadastrado, **quando** submeto, **então** recebo mensagem de erro e o cadastro não é concluído.
 - **Dado** que a senha não atende às regras de validação, **quando** submeto, **então** o Zod bloqueia o envio e exibe o erro antes de chamar a API.
 
-**Rastreabilidade:**
-
-- **Back:** #2 (Feat/create user entity), #3 (Feat/auth user routes)
-- **Front:** [#4](https://github.com/C14-INATEL/RedGreen-Front/pull/4) (Feat loginpage creation)
-
 ### História 2 — Reroll de slot · Prioridade: Alta
 
 > Como **jogador do cassino**, eu quero selecionar um slot específico para realizar um reroll para que eu possa tentar melhorar minha combinação e aumentar minhas chances de obter uma recompensa maior.
@@ -294,11 +460,6 @@ Localmente: `http://localhost:3000/api`.
 - **Dado** que um reroll foi utilizado, **quando** a operação é concluída, **então** a quantidade restante de rerolls é atualizada na interface.
 - **Dado** que não possuo mais rerolls disponíveis, **quando** tento realizar um novo reroll, **então** o sistema não permite a ação e mantém o estado atual dos slots.
 
-**Rastreabilidade:**
-
-- **Back:** #22 (Feat/integrating slot machines)
-- **Front:** [#18](https://github.com/C14-INATEL/RedGreen-Front/pull/18) (Feat/adding logic to slot machine), [#21](https://github.com/C14-INATEL/RedGreen-Front/pull/21) (Feat/slot machine organization)
-
 ### História 3 — Ranking de jogadores · Prioridade: Média
 
 > Como **jogador competitivo**, eu quero ver um ranking dos jogadores para que eu possa comparar meu desempenho com os demais.
@@ -307,11 +468,6 @@ Localmente: `http://localhost:3000/api`.
 
 - **Dado** que existem jogadores cadastrados, **quando** acesso a tela de ranking, **então** vejo a lista ordenada pelo saldo de fichas.
 - **Dado** que meu saldo é alterado, **quando** o ranking é recalculado, **então** minha posição reflete a mudança.
-
-**Rastreabilidade:**
-
-- **Back:** #17 (Feat/new user routes)
-- **Front:** [#11](https://github.com/C14-INATEL/RedGreen-Front/pull/11) (Feat: homepage creation), [#30](https://github.com/C14-INATEL/RedGreen-Front/pull/30) (Feat: add rank route)
 
 ### História 4 — Bônus diário · Prioridade: Média
 
@@ -323,11 +479,6 @@ Localmente: `http://localhost:3000/api`.
 - **Dado** que o bônus diário já foi resgatado, **quando** acesso o painel novamente, **então** o botão de resgate aparece bloqueado com a informação de que o bônus já foi coletado.
 - **Dado** que o resgate é concluído com sucesso, **quando** a API retorna a recompensa, **então** o saldo de fichas é atualizado na interface.
 
-**Rastreabilidade:**
-
-- **Back:** #7 (feat/user-profile-routes)
-- **Front:** [#15](https://github.com/C14-INATEL/RedGreen-Front/pull/15) (add-diary-rewards)
-
 ### História 5 — Gerenciamento de mesas de jogo · Prioridade: Alta
 
 > Como **administrador**, eu quero criar, editar, desativar e remover mesas de jogo para que eu possa controlar quais mesas estarão disponíveis aos jogadores.
@@ -338,11 +489,6 @@ Localmente: `http://localhost:3000/api`.
 - **Dado** que informo dados inválidos ao criar ou editar uma mesa, **quando** tento salvar, **então** recebo uma mensagem de erro e a operação não é concluída.
 - **Dado** que uma mesa está ativa, **quando** tento excluí-la, **então** a exclusão fica bloqueada até que a mesa seja desativada.
 - **Dado** que uma mesa possui sessões ativas, **quando** tento desativá-la, **então** o sistema exibe um aviso antes de concluir a operação.
-
-**Rastreabilidade:**
-
-- **Back:** #6 (feat/create-SlotMachine-entity), #8 (feat/admin-guard), #15 (fix/Slot-game-logic)
-- **Front:** [#26](https://github.com/C14-INATEL/RedGreen-Front/pull/26) (feat-table-system)
 
 ---
 
@@ -427,44 +573,29 @@ Projeto desenvolvido pelas equipes de **Backend** (este repositório) e **Fronte
 
 ---
 
-## Prompts
+## Uso de IA
 
-Esta seção documenta os principais _prompts_ utilizados com ferramentas de IA durante o desenvolvimento, para fins de transparência e rastreabilidade.
+Pedro Ribeiro Nogueira
 
-### Patrick Augusto Lins de Oliveira Damião
+Durante o desenvolvimento do projeto, utilizei o ChatGPT e o Codex como ferramentas de apoio na criação e revisão dos testes de integração. A IA foi utilizada para auxiliar na estruturação dos cenários de teste, elaboração das descrições dos casos, análise de possíveis falhas e apoio na implementação e correção do código dos testes. Também foi utilizada para revisar conflitos encontrados durante o desenvolvimento, auxiliar na documentação do projeto, incluindo a organização do Plano de Testes. As decisões sobre quais cenários deveriam ser testados e por fim a validação dos resultados, utilizando a IA como suporte durante o processo de desenvolvimento.
 
-Foi utilizado o Claude Code, sempre com o contexto do README explicando a estrutura do projeto (com foco na stack) e o PDF com as orientações da tarefa.
+Danilo Henrique Maia da Silva
 
-> **Prompt:** "Estou desenvolvendo um projeto (Backend/Frontend) e preciso do setup inicial com base na stack que enviei. Pode dar uma olhada no README e criar a base do projeto?"
+Durante o desenvolvimento do projeto, a IA foi utilizada como apoio na organização e padronização da suíte de testes de API construída com Postman/Newman, consolidando casos de teste fragmentados em um formato único e consistente, convertendo scripts para o padrão de nomenclatura adotado no projeto e corrigindo falhas na geração automática de relatórios de teste. Também foi utilizada para investigar e diagnosticar a causa raiz de falhas reportadas pela equipe. Exemplo: "Preciso reorganizar a suíte de testes de API do projeto, que utiliza Postman e Newman. Alguns casos de teste (TC-006, TC-008, TC-009 e TC-010) estão fragmentados em múltiplas requisições visíveis no Postman Runner, enquanto os demais casos seguem um padrão de item único por pasta. Solicito a consolidação desses casos para o mesmo padrão, mantendo toda a lógica de negócio e as asserções existentes, e garantindo que, nos testes de caminho infeliz, a requisição visível seja aquela que retorna o status de erro esperado. Além disso, peço a verificação de possíveis relatórios de falha incorretos ao executar a suíte completa de testes, identificando e corrigindo a causa raiz, caso exista."
 
-Gerou um bom resultado a partir do README que montamos antes de dar início ao desenvolvimento do projeto tanto no back quanto no front, só precisou de alguns ajustes na estrutura e a mudança de algumas lógicas. A maioria do que foi executado foram os comandos de inicialização dessa stack, mas ela agilizou bastante o processo. Também deixei de fora a parte sobre testes e pipeline durante a criação inicial, já que essas partes seriam feitas futuramente.
+Pedro Armengol de Oliveira
 
-> **Prompt:** "Poderia criar testes para cobrir a lógica do jogo?"
+O ChatGPT foi utilizada como ferramenta de apoio durante o desenvolvimento do projeto, auxiliando na compreensão das tecnologias utilizadas, na análise e organização dos casos de teste, na identificação de cenários positivos e negativos, na interpretação dos resultados e na elaboração da documentação. Também foi utilizado o Codex para auxiliar na implementação dos testes automatizados, enquanto a execução e validação dos testes foram realizadas no próprio projeto.
 
-Mais uma vez a IA mostrou não ser muito boa em gerar testes unitários, alguns fazem bastante sentido mas a grande maioria (principalmente em casos mais complexos, como esses da lógica de jogo) acaba gerando testes redundantes ou que nem sequer se encaixam no contexto.
+Pedro Henrique de Paula Andrade
 
-> **Prompt:** "Gere uma versão atualizada do README com as mudanças que fizemos, incluíndo a nova pipeline, onde estamos hospedando os serviços, os autores, novas funcionalidades e etc..."
-
-Resultado foi muito bom, separou o README em índices e descreveu muito bem os processos. Quase não foram necessários ajustes.
-
-### Antonio Feliciano
-
-**Prompt 1 — Implementação de código (espelhando padrão existente)**
-
-- **Modelo:** Claude (extensão VSCode)
-- **Resumo do prompt:** "Adicionar um campo TableColor ao GambitTable (NestJS + TypeORM + PostgreSQL), reaproveitando o enum de cor que já existe no módulo de slot machine. Antes de qualquer mudança, ler os arquivos relevantes. NÃO criar migration (o projeto usa synchronize). Promover o enum SlotMachineColor para um local compartilhado e renomeá-lo para GameTableColor, atualizando todas as referências. Usar PascalCase em todos os nomes. Espelhar exatamente como TableColor funciona no SlotMachine. Não deixar código morto, comentado ou imports não usados."
-- **Resultado:** Ajustado. Gerou o refactor seguindo a maior parte dos padrões pedidos, mas revisei manualmente as referências do enum e os testes, corrigindo pontos que não bateram com o resto do código antes de commitar.
-- **Observação:** Esse nível de detalhe no prompt foi resultado direto do problema que tive antes com ChatGPT/Copilot ignorando PascalCase — passei a explicitar as regras.
-
-**Prompt 2 — Configuração de CI/CD (com pushback)**
-
-- **Modelo:** Claude (extensão VSCode)
-- **Resumo do prompt:** "Adicionar stages de qualidade (dependências, lint+format, testes, build) antes do Deploy no Jenkinsfile, sem alterar o stage de Deploy existente."
-- **Resultado:** Ajustado. A proposta inicial foi útil, mas rejeitei a sugestão de aumentar o timeout de 5 para 15 minutos (mantive 5), pedi para deixar as strings do Jenkinsfile em inglês, e troquei o stage de testes de cobertura (test:cov) para testes unitários (npm test), que era o que realmente queríamos.
-- **Observação:** Bom exemplo de que a IA propõe, mas a decisão final foi do grupo.
-
-**Prompt 3 — Documentação (este README)**
-
-- **Modelo:** Claude (chat)
-- **Resumo do prompt:** "Estou escrevendo a parte de dinâmica de desenvolvimento do README e quero priorizar a honestidade. Vou mandar o que escrevi de cabeça e gostaria de um feedback, principalmente se ficou bom e se faltou algo."
-- **Resultado:** Ajustado. Usei o feedback para reorganizar o texto e cobrir itens que faltavam (conflitos/bloqueios, lições aprendidas), mas o conteúdo factual — como as coisas realmente aconteceram no grupo — foi escrito por mim.
+Usei o Claude (Anthropic) pela extensão do VSCode como apoio na construção da
+suíte de testes de API. A definição dos casos de teste foi feita por mim, partindo
+das regras de negócio do backend, como autenticação, permissões de usuário, bônus
+diário, continuidade de sessão após reautenticação e cash-out concorrente. Com o
+cenário já pensado e escrito, eu passava para a IA o contexto do projeto e o
+comportamento esperado de cada requisição, e ela me ajudava a escrever as
+requisições da collection do Postman e os runners em Node que executam a collection
+pelo Newman. A execução dos testes, a análise dos resultados e a validação final de
+cada cenário foram feitas por mim, então a IA atuou como apoio na escrita do código
+e não como responsável pela autoria dos testes.

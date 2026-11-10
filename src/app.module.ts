@@ -27,6 +27,10 @@ import { DatabaseSeedService } from './core/database/database-seed.service';
         const database = Config.get<string>('POSTGRES_DB');
         const sslEnabled =
           Config.get<string>('POSTGRES_SSL', 'false') === 'true';
+        const poolSize = parseInt(
+          Config.get<string>('TEST_DB_POOL_SIZE', '5'),
+          10
+        );
 
         if (!username || !password || !database) {
           throw new Error(
@@ -50,7 +54,7 @@ import { DatabaseSeedService } from './core/database/database-seed.service';
           logging: true,
           ssl: sslEnabled ? { rejectUnauthorized: false } : false,
           extra: {
-            max: 5,
+            max: Number.isFinite(poolSize) && poolSize > 0 ? poolSize : 5,
             connectionTimeoutMillis: 10000,
             idleTimeoutMillis: 30000,
           },

@@ -82,6 +82,15 @@ export class DatabaseSeedService implements OnModuleInit {
         TableColor: SlotMachineColor.White,
         Active: true,
       },
+      {
+        Name: 'Slot 0',
+        Description: 'SlotMachine',
+        MinimumSpinValue: 10,
+        MinimumChipsRequired: 0,
+        MinimumRerollValue: 5,
+        TableColor: SlotMachineColor.White,
+        Active: true,
+      },
     ];
 
     for (const SlotMachineData of SlotMachines) {
@@ -125,6 +134,16 @@ export class DatabaseSeedService implements OnModuleInit {
         TableMultiplier: 1,
         MinimumCardsPurchased: 7,
         MaxCardsPurchased: 20,
+        Active: true,
+      },
+      {
+        Name: 'High Stake Gambit',
+        Description: 'Gambit',
+        MinimumChipsRequired: 100,
+        CardPrice: 10,
+        TableMultiplier: 1,
+        MinimumCardsPurchased: 5,
+        MaxCardsPurchased: 25,
         Active: true,
       },
     ];
