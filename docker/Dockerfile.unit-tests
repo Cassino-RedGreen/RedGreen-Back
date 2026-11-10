@@ -12,7 +12,7 @@ RUN npm ci
 
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
-COPY test ./test
+COPY test/*.spec.ts ./test/
 
 RUN mkdir -p /app/reports && chown node:node /app/reports
 
