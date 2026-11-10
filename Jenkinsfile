@@ -1,8 +1,3 @@
-// Pipeline de CI/CD do RedGreen-Back. Guia completo em docs/pipeline.md.
-// Todas as etapas ficam aqui: nada e configurado pela interface do Jenkins.
-// O Jenkins usa o Docker do host (socket montado), entao caminhos do workspace NAO existem para o daemon:
-// arquivos saem dos containers por "docker cp", nunca por bind mount (-v $WORKSPACE/...).
-
 pipeline {
   agent any
 
@@ -14,27 +9,20 @@ pipeline {
   }
 
   environment {
-    // Evita que o "npm ci" tente instalar os hooks do Husky no servidor de CI.
     HUSKY = '0'
-    // Stack de testes = compose base + override de CI (postgres isolado, api, unit-tests, e2e-tests).
     COMPOSE_FILE = 'docker-compose.yml:docker-compose.ci.yml'
-    // Banco efemero da stack de testes; a senha vem da credencial postgres-password.
     POSTGRES_USER = 'postgres'
     POSTGRES_DB = 'redgreen'
   }
 
   stages {
-    // Define nomes unicos deste build e confere ferramentas e o compose antes de gastar tempo com o resto.
-    stage('Preparacao') {
+    stage('Prepare') {
       steps {
         script {
           def branch = (env.BRANCH_NAME ?: 'local').toLowerCase().replaceAll('[^a-z0-9]+', '-')
-          // Projeto compose unico por build: containers, redes e volumes nao colidem entre builds nem com o dev.
           env.COMPOSE_PROJECT_NAME = "redgreen-ci-${branch}-${env.BUILD_NUMBER}"
-          // Tag rastreavel: numero do build + commit curto.
           env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
           env.API_IMAGE = env.DOCKERHUB_REPO ?: 'redgreen-back-api'
-          // Login do Docker Hub fica no workspace e e apagado no cleanWs, nao no home do Jenkins.
           env.DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
         }
         echo "Projeto compose: ${env.COMPOSE_PROJECT_NAME} | imagem: ${env.API_IMAGE}:${env.IMAGE_TAG}"
@@ -49,15 +37,13 @@ pipeline {
       }
     }
 
-    // Instala as dependencias do package-lock.json; usadas pelas etapas de qualidade, que rodam no proprio Jenkins.
-    stage('Dependencias') {
+    stage('Install Dependencies') {
       steps {
         sh 'npm ci --no-audit --no-fund'
       }
     }
 
-    // Verificacoes rapidas em paralelo: estilo de codigo, formatacao e vulnerabilidades conhecidas.
-    stage('Qualidade') {
+    stage('Quality') {
       parallel {
         stage('Lint') {
           steps {
@@ -77,9 +63,7 @@ pipeline {
       }
     }
 
-    // Testes unitarios com cobertura no container unit-tests. O threshold de 90% do Jest quebra o build.
-    // Os relatorios sao copiados ANTES de falhar a etapa, para serem arquivados mesmo em caso de erro.
-    stage('Testes unitarios') {
+    stage('Unit Tests') {
       steps {
         sh 'docker compose build unit-tests'
         script {
@@ -92,9 +76,7 @@ pipeline {
       }
     }
 
-    // Builda a imagem da API (docker/Dockerfile.api) e gera o pacote versionado com o dist/ extraido da imagem,
-    // garantindo que o pacote arquivado e exatamente o que roda na imagem publicada.
-    stage('Build e empacotamento') {
+    stage('Build & Package') {
       steps {
         sh '''
           docker compose build api
@@ -107,9 +89,7 @@ pipeline {
       }
     }
 
-    // Sobe postgres + api isolados com a imagem recem-buildada, espera a API ficar saudavel
-    // e roda os testes Newman contra ela. Resultados sao copiados antes de falhar a etapa.
-    stage('Testes E2E') {
+    stage('E2E Tests') {
       steps {
         withCredentials([
           string(credentialsId: 'postgres-password', variable: 'POSTGRES_PASSWORD'),
@@ -129,8 +109,7 @@ pipeline {
       }
     }
 
-    // Publica a imagem testada no Docker Hub, somente na branch main.
-    stage('Publicar no Docker Hub') {
+    stage('Publish to Docker Hub') {
       when {
         branch 'main'
       }
@@ -152,7 +131,6 @@ pipeline {
   }
 
   post {
-    // Roda sempre: publica os resultados de teste, arquiva pacote e relatorios e envia o e-mail.
     always {
       junit(allowEmptyResults: true, testResults: 'reports/unit/junit.xml, test-results/**/junit-*.xml')
       archiveArtifacts(
@@ -160,7 +138,6 @@ pipeline {
         fingerprint: true,
         artifacts: 'redgreen-back-*.tar.gz, reports/**, test-results/**'
       )
-      // O script de e-mail le SMTP e destinatarios do ambiente. Se ele falhar, so avisa: o status real do build e mantido.
       withCredentials([string(credentialsId: 'smtp-password', variable: 'SMTP_PASSWORD')]) {
         script {
           withEnv([
@@ -175,7 +152,6 @@ pipeline {
         }
       }
     }
-    // Roda por ultimo: derruba so a stack deste build (Jenkins e Mailpit ficam de pe), sai do Docker Hub e limpa o workspace.
     cleanup {
       sh '''
         if [ -n "$COMPOSE_PROJECT_NAME" ]; then

@@ -1,15 +1,9 @@
-# Stack efemera de cada build do Jenkins. Sempre usada junto com o compose base:
-#   docker compose -f docker-compose.yml -f docker-compose.ci.yml -p <projeto-do-build> ...
-
 services:
-  # Mesmo postgres do compose base, sem nome fixo, sem porta no host e sem restart,
-  # para cada build ter um banco isolado que nao conflita com o ambiente de dev.
   postgres:
     container_name: !reset null
     ports: !reset []
     restart: "no"
 
-  # API buildada pelo pipeline. A mesma tag e testada no E2E e publicada no Docker Hub.
   api:
     build:
       context: .
@@ -40,7 +34,6 @@ services:
       retries: 24
       start_period: 10s
 
-  # Testes unitarios com cobertura (npm run test:cov). Relatorios ficam em /app/reports.
   unit-tests:
     build:
       context: .
@@ -48,7 +41,6 @@ services:
     volumes:
       - unit_reports:/app/reports
 
-  # Testes E2E (Newman). Compartilha a rede da API, entao o localhost:3000 do Postman e a propria API.
   e2e-tests:
     build:
       context: .

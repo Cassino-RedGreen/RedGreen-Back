@@ -1,8 +1,6 @@
 name: redgreen-jenkins
 
 services:
-  # Jenkins: executa o Jenkinsfile. Admin, credenciais e job sao criados pelo JCasC (casc.yaml) na subida.
-  # Usa o Docker do host pelo socket para buildar imagens e subir a stack de testes de cada build.
   jenkins:
     build:
       context: .
@@ -36,8 +34,6 @@ services:
     depends_on:
       - mailpit
 
-  # Mailpit: servidor SMTP de teste. Recebe os e-mails do pipeline em mailpit:1025 (rede interna)
-  # e mostra tudo na interface web, sem enviar nada para fora.
   mailpit:
     image: axllent/mailpit:latest
     restart: unless-stopped

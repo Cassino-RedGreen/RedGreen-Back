@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Envia o e-mail com o resultado do pipeline Jenkins.
-
-SMTP e destinatarios vem apenas de variaveis de ambiente:
-EMAIL_TO, EMAIL_FROM, SMTP_HOST, SMTP_PORT (obrigatorias),
-SMTP_USER, SMTP_PASSWORD, SMTP_STARTTLS (opcionais).
-"""
 
 import argparse
 import glob
