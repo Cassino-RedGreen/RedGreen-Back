@@ -1,0 +1,22 @@
+ARG NODE_VERSION=24
+
+FROM node:${NODE_VERSION}-bookworm-slim
+
+WORKDIR /app
+
+ENV HUSKY=0
+
+COPY package.json package-lock.json ./
+COPY scripts/patch-newman.cjs ./scripts/
+RUN npm ci
+
+COPY tsconfig.json tsconfig.build.json nest-cli.json ./
+COPY src ./src
+COPY test/*.spec.ts ./test/
+
+RUN mkdir -p /app/reports && chown node:node /app/reports
+
+ENV CI=true
+USER node
+
+CMD ["npm", "run", "test:cov"]
