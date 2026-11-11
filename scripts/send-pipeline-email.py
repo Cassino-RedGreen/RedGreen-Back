@@ -30,9 +30,11 @@ def parse_args():
     parser.add_argument("--url", default=env("BUILD_URL", "-"))
     parser.add_argument("--image", default=env("PUBLISHED_IMAGE") or "not published in this build")
     parser.add_argument("--workspace", default=env("WORKSPACE", "."))
+    parser.add_argument("--missing-reports", default=env("MISSING_REPORTS", ""))
     args = parser.parse_args()
     args.job = unquote(args.job)
     args.status = args.status.upper()
+    args.missing_reports = [item.strip() for item in args.missing_reports.split(";") if item.strip()]
     return args
 
 
@@ -100,8 +102,10 @@ def build_message(args, smtp, totals, files):
         ("Published image", args.image),
         ("Tests", tests_line),
         ("Reports read", ", ".join(files) if files else "-"),
-        ("Details", args.url),
     ]
+    if args.missing_reports:
+        rows.append(("Missing reports", "; ".join(args.missing_reports)))
+    rows.append(("Details", args.url))
 
     text = [f"Pipeline {args.job} #{args.build_number}: {args.status}", ""]
     text += [f"{label}: {value}" for label, value in rows]
