@@ -7,7 +7,7 @@ jenkins:
       allowsSignup: false
       users:
         - id: "${JENKINS_ADMIN_USER}"
-          password: "${jenkins_admin_password}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
   authorizationStrategy:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
@@ -25,22 +25,22 @@ credentials:
               id: dockerhub
               description: "Docker Hub (usuario + access token)"
               username: "${DOCKERHUB_USERNAME}"
-              password: "${dockerhub_token}"
+              password: "${DOCKERHUB_TOKEN}"
           - string:
               scope: GLOBAL
               id: postgres-password
               description: "Senha do Postgres da stack de testes E2E"
-              secret: "${postgres_password}"
+              secret: "${POSTGRES_PASSWORD}"
           - string:
               scope: GLOBAL
               id: jwt-secret
               description: "JWT_SECRET da API na stack de testes E2E"
-              secret: "${jwt_secret}"
+              secret: "${JWT_SECRET}"
           - string:
               scope: GLOBAL
               id: smtp-password
               description: "Senha do SMTP (vazia para o Mailpit)"
-              secret: "${smtp_password:-}"
+              secret: "${SMTP_PASSWORD:-}"
 
 jobs:
   - script: >
