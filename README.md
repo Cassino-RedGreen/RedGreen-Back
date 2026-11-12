@@ -275,6 +275,109 @@ O POST no hook solicita o deploy; o sucesso desse passo não confirma que a publ
 
 ---
 
+## Pipeline CI/CD (Jenkins)
+
+Pipeline local em container, configurado só por código: imagem em [`docker/Dockerfile.jenkins`](docker/Dockerfile.jenkins), configuração e job em [`jenkins/casc.yaml`](jenkins/casc.yaml) (JCasC + Job DSL) e etapas no [`Jenkinsfile`](Jenkinsfile). Nada é configurado pela interface.
+
+### Pré-requisitos
+
+- **Docker Desktop** em execução.
+- **Git Bash** no Windows, para rodar os comandos abaixo. No Linux/macOS, qualquer shell `bash`.
+
+### Configuração do `.env`
+
+Copie do [`.env.example`](.env.example) os blocos `Jenkins`, `Docker Hub`, `Email` e `SMTP (Mailpit)` para o seu `.env`. Escreva os valores sem aspas.
+
+| Variável                                                  | Obrigatória | Descrição                                                                                                                |
+| --------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `JENKINS_ADMIN_USER`                                      | sim         | Usuário admin criado pelo JCasC. O setup wizard está desligado: vazia, o Jenkins sobe sem nenhum usuário capaz de logar. |
+| `JENKINS_ADMIN_PASSWORD`                                  | sim         | Senha do admin (forte, 16+ caracteres). Mesma regra da linha acima.                                                      |
+| `POSTGRES_PASSWORD`                                       | sim         | Senha do PostgreSQL da stack de testes E2E.                                                                              |
+| `JWT_SECRET`                                              | sim         | Segredo da API na stack de testes E2E.                                                                                   |
+| `DOCKER_SOCKET_GID`                                       | sim         | Grupo do socket do Docker: `0` no Docker Desktop; no Linux, `stat -c %g /var/run/docker.sock`.                           |
+| `JENKINS_PORT`, `JENKINS_PUBLIC_URL`, `MAILPIT_UI_PORT`   | não         | Portas e URL pública (padrão `8080` e `8025`). Se mudar `JENKINS_PORT`, ajuste a porta em `JENKINS_PUBLIC_URL`.          |
+| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `DOCKERHUB_REPO` | não         | Só para publicar a imagem na `main`. Nas outras branches a etapa de publicação é pulada.                                 |
+| `EMAIL_TO`, `EMAIL_FROM`, `SMTP_*`                        | não         | Destino e servidor do e-mail de resultado. O padrão envia para o Mailpit.                                                |
+
+Para gerar o `DOCKERHUB_TOKEN`: no Docker Hub, **Account settings → Personal access tokens → Generate new token**, com permissão **Read & Write**. Use o token, não a senha da conta.
+
+> **Nunca commite o `.env`.** Ele já está no `.gitignore` e guarda senhas e tokens.
+
+### Subindo Jenkins e Mailpit
+
+Na raiz do repositório:
+
+```bash
+(
+  set -a; . ./.env; set +a
+  : "${JENKINS_ADMIN_USER:?defina JENKINS_ADMIN_USER no .env}" "${JENKINS_ADMIN_PASSWORD:?defina JENKINS_ADMIN_PASSWORD no .env}"
+  export MSYS_NO_PATHCONV=1
+  docker build -f docker/Dockerfile.jenkins -t redgreen-jenkins:local jenkins
+  docker network create redgreen-jenkins
+  docker run -d --name redgreen-mailpit --network redgreen-jenkins --network-alias mailpit \
+    -p 127.0.0.1:${MAILPIT_UI_PORT}:8025 --restart unless-stopped axllent/mailpit:latest
+  docker run -d --name redgreen-jenkins --network redgreen-jenkins \
+    -p 127.0.0.1:${JENKINS_PORT}:8080 --group-add "${DOCKER_SOCKET_GID}" \
+    -v redgreen_jenkins_home:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock \
+    --env-file .env --restart unless-stopped redgreen-jenkins:local
+)
+```
+
+- Os parênteses fazem o bloco inteiro parar se a checagem do admin falhar. Sem eles, o terminal mostra o erro e continua nas linhas seguintes.
+- `MSYS_NO_PATHCONV=1` só é necessário no Git Bash (evita a conversão de `/var/run/docker.sock` para caminho do Windows). No Linux/macOS a linha não tem efeito e o comando é o mesmo; só confira o `DOCKER_SOCKET_GID` no Linux.
+- Para acompanhar a subida: `docker logs -f redgreen-jenkins`, até aparecer `Jenkins is fully up and running` (Ctrl+C fecha só o log).
+
+### Acesso
+
+| Serviço | Endereço                             | Observação                                                 |
+| ------- | ------------------------------------ | ---------------------------------------------------------- |
+| Jenkins | `http://localhost:<JENKINS_PORT>`    | Login com `JENKINS_ADMIN_USER` / `JENKINS_ADMIN_PASSWORD`. |
+| Mailpit | `http://localhost:<MAILPIT_UI_PORT>` | Caixa de entrada dos e-mails do pipeline.                  |
+
+As portas são publicadas só em `127.0.0.1`: os serviços não ficam acessíveis por outras máquinas da rede.
+
+O job `RedGreen-Back` é multibranch e lê o repositório do GitHub (não a cópia local), varrendo as branches a cada 5 minutos. Mudanças só entram no pipeline depois do `git push`; para rodar na hora, use **Scan Repository Now** no job.
+
+### Etapas do pipeline
+
+| Etapa                 | O que faz                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| Prepare               | Define nomes únicos por build e a tag da imagem (`<build>-<commit>`).                          |
+| Install Dependencies  | `npm ci`.                                                                                      |
+| Quality               | Lint, formatação e `npm audit --audit-level=high`, em paralelo.                                |
+| Unit Tests            | Jest com cobertura em container; o build falha abaixo de 90% de cobertura.                     |
+| Build & Package       | Builda a imagem da API (`docker/Dockerfile.api`) e gera o pacote `redgreen-back-<tag>.tar.gz`. |
+| E2E Tests             | Sobe PostgreSQL e API isolados e roda os cenários Newman contra a imagem recém-buildada.       |
+| Publish to Docker Hub | Só na `main`: publica as tags `<tag>` e `latest`.                                              |
+| Pós-build             | Sempre: remove containers, rede e imagens do build e envia o e-mail de resultado.              |
+
+Relatórios verificados ao fim das etapas de teste:
+
+| Relatório                                                                               | Tipo        | Se faltar                         |
+| --------------------------------------------------------------------------------------- | ----------- | --------------------------------- |
+| `reports/unit/junit.xml` e `reports/unit/coverage/cobertura-coverage.xml`               | obrigatório | `FAILURE`                         |
+| `redgreen-back-<tag>.tar.gz`                                                            | obrigatório | `FAILURE`                         |
+| `test-results/<timestamp>/summary.json` e o JSON do Newman de cada cenário listado nele | obrigatório | `FAILURE`                         |
+| `test-results/<timestamp>/junit-*.xml`                                                  | opcional    | `UNSTABLE` (só se nenhum existir) |
+
+### Parando e removendo
+
+```bash
+# Parar sem perder nada (volta com docker start redgreen-mailpit redgreen-jenkins)
+docker stop redgreen-jenkins redgreen-mailpit
+
+# Remover containers e rede (o histórico do Jenkins fica no volume)
+docker rm -f redgreen-jenkins redgreen-mailpit
+docker network rm redgreen-jenkins
+
+# Recomeçar do zero: apaga o volume com todo o histórico de builds
+docker volume rm redgreen_jenkins_home
+```
+
+Ao mudar senha ou token no `.env`, remova os containers e rode o bloco de subida de novo: o JCasC reaplica a configuração a cada inicialização.
+
+---
+
 ## Testes
 
 Há três suites: testes unitários com **Jest**, testes HTTP com **Newman/Postman** e testes de compatibilidade das ferramentas com **node:test**. Os cenários de API cobrem fluxos de sucesso, rejeições e concorrência usando a API e o banco reais.
