@@ -1,0 +1,28 @@
+FROM node:24-bookworm-slim AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY scripts/patch-newman.cjs ./scripts/patch-newman.cjs
+RUN npm ci
+
+COPY nest-cli.json tsconfig*.json ./
+COPY src ./src
+RUN npm run build
+
+FROM node:24-bookworm-slim AS runtime
+
+ENV NODE_ENV=production \
+    HUSKY=0
+
+WORKDIR /app
+
+COPY --chown=node:node package.json package-lock.json ./
+COPY --chown=node:node scripts/patch-newman.cjs ./scripts/patch-newman.cjs
+RUN npm pkg delete scripts.prepare && npm ci --omit=dev
+
+COPY --from=build --chown=node:node /app/dist ./dist
+
+USER node
+EXPOSE 3000
+CMD ["npm", "run", "start:prod"]
