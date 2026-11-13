@@ -7,6 +7,11 @@ pipeline {
       defaultValue: false,
       description: 'Executa a suíte completa de performance (k6).'
     )
+    booleanParam(
+      name: 'PUBLISH_IMAGE',
+      defaultValue: false,
+      description: 'Publica a imagem da API no Docker Hub a partir desta branch (na main a publicação é automática).'
+    )
   }
 
   options {
@@ -266,20 +271,28 @@ pipeline {
 
     stage('Publish to Docker Hub') {
       when {
-        branch 'main'
+        anyOf {
+          branch 'main'
+          expression { params.PUBLISH_IMAGE }
+        }
       }
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
           sh '''
             : "${DOCKERHUB_REPO:?Set DOCKERHUB_REPO in the Jenkins .env (e.g. user/redgreen-back)}"
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
-            docker push "$API_IMAGE:$IMAGE_TAG"
-            docker tag "$API_IMAGE:$IMAGE_TAG" "$API_IMAGE:latest"
-            docker push "$API_IMAGE:latest"
+            trap 'docker logout >/dev/null 2>&1 || true' EXIT
+            docker tag "$API_IMAGE:$IMAGE_TAG" "$DOCKERHUB_REPO:$IMAGE_TAG"
+            docker push "$DOCKERHUB_REPO:$IMAGE_TAG"
+            if [ "${BRANCH_NAME:-}" = "main" ]; then
+              docker tag "$API_IMAGE:$IMAGE_TAG" "$DOCKERHUB_REPO:latest"
+              docker push "$DOCKERHUB_REPO:latest"
+            fi
           '''
         }
         script {
-          env.PUBLISHED_IMAGE = "${env.API_IMAGE}:${env.IMAGE_TAG} (and latest)"
+          def suffix = env.BRANCH_NAME == 'main' ? ' (and latest)' : ''
+          env.PUBLISHED_IMAGE = "${env.DOCKERHUB_REPO}:${env.IMAGE_TAG}${suffix}"
         }
       }
       post {
@@ -302,6 +315,12 @@ pipeline {
           docker rm -f "$CI_PREFIX-dist" "$CI_PREFIX-api" "$CI_PREFIX-pg" >/dev/null 2>&1 || true
           docker network rm "$CI_NETWORK" >/dev/null 2>&1 || true
           docker image rm "$API_IMAGE:$IMAGE_TAG" >/dev/null 2>&1 || true
+          if [ -n "${DOCKERHUB_REPO:-}" ]; then
+            docker image rm "$DOCKERHUB_REPO:$IMAGE_TAG" >/dev/null 2>&1 || true
+            if [ "${BRANCH_NAME:-}" = "main" ]; then
+              docker image rm "$DOCKERHUB_REPO:latest" >/dev/null 2>&1 || true
+            fi
+          fi
         fi
       '''
       withCredentials([string(credentialsId: 'smtp-password', variable: 'SMTP_PASSWORD')]) {
