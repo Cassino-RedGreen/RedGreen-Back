@@ -35,6 +35,12 @@ credentials:
               id: smtp-password
               description: 'Senha do SMTP (vazia para o Mailpit)'
               secret: "${SMTP_PASSWORD:-}"
+          - usernamePassword:
+              scope: GLOBAL
+              id: dockerhub
+              description: 'Usuario e access token do Docker Hub'
+              username: "${DOCKERHUB_USERNAME:-}"
+              password: "${DOCKERHUB_TOKEN:-}"
 
 jobs:
   - script: >
