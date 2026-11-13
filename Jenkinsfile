@@ -48,7 +48,8 @@ pipeline {
           npm --version
           docker version
           mkdir -p reports test-results package performance-results
-          tar -czf runner-source.tar.gz \
+          archive="$(mktemp)"
+          tar -czf "$archive" \
             --exclude=.git \
             --exclude='.env*' \
             --exclude=runner-source.tar.gz \
@@ -60,6 +61,7 @@ pipeline {
             --exclude=test/performance/artifacts \
             --exclude=temp \
             .
+          mv "$archive" runner-source.tar.gz
         '''
       }
       post {
