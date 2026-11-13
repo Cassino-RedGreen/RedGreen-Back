@@ -6,11 +6,15 @@ const {
   writeFileSync: WriteFileSync,
 } = require('node:fs');
 const Newman = require('newman');
+const { CreateNewmanReporterOptions } = require('./newman-reporters.cjs');
 
 const EnvPath = Resolve(__dirname, '../../.env');
 if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
 
-const EnvironmentPath = Resolve(__dirname, './redgreen.local.postman_environment.json');
+const EnvironmentPath = Resolve(
+  __dirname,
+  './redgreen.local.postman_environment.json'
+);
 
 function LoadEnvironment() {
   return JSON.parse(ReadFileSync(EnvironmentPath, 'utf8'));
@@ -28,7 +32,9 @@ function SetVar(Environment, Key, Value) {
 
 function RequireSeededAdmin(Environment) {
   const Email = Environment.values.find((V) => V.key === 'adminEmail')?.value;
-  const Password = Environment.values.find((V) => V.key === 'adminPassword')?.value;
+  const Password = Environment.values.find(
+    (V) => V.key === 'adminPassword'
+  )?.value;
   if (!Email || !Password) {
     throw new Error(
       'adminEmail/adminPassword not found in the environment - create the shared admin account manually first (see test/api/SHARED_SETUP.md).'
@@ -40,8 +46,9 @@ async function Run() {
   const Environment = LoadEnvironment();
   const BaseUrl =
     process.env.TC006_BASE_URL ||
+    process.env.API_BASE_URL ||
     Environment.values.find((V) => V.key === 'baseUrl').value;
-  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]', 'api'];
   if (!LocalHosts.includes(new URL(BaseUrl).hostname)) {
     throw new Error('TC-006 requires a local API.');
   }
@@ -61,9 +68,9 @@ async function Run() {
       {
         collection: require('./redgreen-api.postman_collection.json'),
         environment: Environment,
-        folder: 'TC-006 - Admin creates and configures an active table correctly',
-        reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
-        reporter: { json: { export: process.env.TEST_CASE_REPORT } },
+        folder:
+          'TC-006 - Admin creates and configures an active table correctly',
+        ...CreateNewmanReporterOptions('TC-006', process.env.TEST_CASE_REPORT),
         timeoutRequest: 15000,
         timeoutScript: 30000,
       },

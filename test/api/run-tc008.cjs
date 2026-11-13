@@ -5,11 +5,15 @@ const {
   writeFileSync: WriteFileSync,
 } = require('node:fs');
 const Newman = require('newman');
+const { CreateNewmanReporterOptions } = require('./newman-reporters.cjs');
 
 const EnvPath = Resolve(__dirname, '../../.env');
 if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
 
-const EnvironmentPath = Resolve(__dirname, './redgreen.local.postman_environment.json');
+const EnvironmentPath = Resolve(
+  __dirname,
+  './redgreen.local.postman_environment.json'
+);
 
 const SLOT_MACHINE_NAME = 'Slot 1';
 const SLOT_MINIMUM_SPIN_VALUE = 10;
@@ -39,7 +43,9 @@ async function RequireSlotMachine(BaseUrl) {
   });
   if (List.status === 200) {
     const Machines = await List.json();
-    const Found = Machines.find((M) => M.Name === SLOT_MACHINE_NAME && M.Active);
+    const Found = Machines.find(
+      (M) => M.Name === SLOT_MACHINE_NAME && M.Active
+    );
     if (Found) return String(Found.SlotMachineId);
   }
   throw new Error(
@@ -83,8 +89,9 @@ async function Run() {
   const Environment = LoadEnvironment();
   const BaseUrl =
     process.env.TC008_BASE_URL ||
+    process.env.API_BASE_URL ||
     Environment.values.find((V) => V.key === 'baseUrl').value;
-  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]', 'api'];
   if (!LocalHosts.includes(new URL(BaseUrl).hostname)) {
     throw new Error('TC-008 requires a local API.');
   }
@@ -95,10 +102,22 @@ async function Run() {
     const GambitTableId = await RequireGambitTable(BaseUrl);
 
     SetVar(Environment, 'baseUrl', BaseUrl);
-    SetVar(Environment, 'tc008SlotMinimumSpinValue', String(SLOT_MINIMUM_SPIN_VALUE));
-    SetVar(Environment, 'tc008SlotMinimumRerollValue', String(SLOT_MINIMUM_REROLL_VALUE));
+    SetVar(
+      Environment,
+      'tc008SlotMinimumSpinValue',
+      String(SLOT_MINIMUM_SPIN_VALUE)
+    );
+    SetVar(
+      Environment,
+      'tc008SlotMinimumRerollValue',
+      String(SLOT_MINIMUM_REROLL_VALUE)
+    );
     SetVar(Environment, 'tc008GambitCardPrice', String(GAMBIT_CARD_PRICE));
-    SetVar(Environment, 'tc008GambitCardsPurchased', String(GAMBIT_CARDS_PURCHASED));
+    SetVar(
+      Environment,
+      'tc008GambitCardsPurchased',
+      String(GAMBIT_CARDS_PURCHASED)
+    );
     SaveEnvironment(Environment);
     console.log(
       `TC-008: using the shared "${SLOT_MACHINE_NAME}" (#${SlotMachineId}) and "${GAMBIT_TABLE_NAME}" (#${GambitTableId}) tables.`
@@ -111,8 +130,10 @@ async function Run() {
           environment: Environment,
           folder:
             'TC-008 - Player completes a Slot session and starts a Gambit session with the updated balance',
-          reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
-          reporter: { json: { export: process.env.TEST_CASE_REPORT } },
+          ...CreateNewmanReporterOptions(
+            'TC-008',
+            process.env.TEST_CASE_REPORT
+          ),
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },
