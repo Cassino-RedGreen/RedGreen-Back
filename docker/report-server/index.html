@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#172b4d" />
+    <title>RedGreen · CI Reports</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f8fa;
+        --panel: #fff;
+        --fg: #1f2328;
+        --muted: #656d76;
+        --line: #d1d9e0;
+        --accent: #0969da;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d1117;
+          --panel: #161b22;
+          --fg: #e6edf3;
+          --muted: #9198a1;
+          --line: #30363d;
+          --accent: #58a6ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.55 system-ui,
+          sans-serif;
+      }
+      header {
+        padding: 3.5rem max(1.25rem, calc((100% - 68rem) / 2));
+        background: #172b4d;
+        color: #fff;
+      }
+      header p {
+        max-width: 42rem;
+        margin: 0.6rem 0 0;
+        color: #d6e2f0;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(1.8rem, 4vw, 2.6rem);
+        letter-spacing: -0.03em;
+      }
+      main {
+        max-width: 68rem;
+        margin: 0 auto;
+        padding: 2rem 1.25rem 3rem;
+      }
+      .eyebrow {
+        color: var(--accent);
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      h2 {
+        margin: 0.25rem 0 1rem;
+        font-size: 1.35rem;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+        gap: 1rem;
+      }
+      .card {
+        display: flex;
+        min-height: 12rem;
+        flex-direction: column;
+        padding: 1.25rem;
+        border: 1px solid var(--line);
+        border-radius: 0.8rem;
+        background: var(--panel);
+        box-shadow: 0 2px 8px #0000000a;
+      }
+      .icon {
+        display: grid;
+        width: 2.5rem;
+        height: 2.5rem;
+        place-items: center;
+        border-radius: 0.65rem;
+        background: color-mix(in srgb, var(--accent) 12%, transparent);
+        color: var(--accent);
+        font-size: 1.2rem;
+        font-weight: 700;
+      }
+      .card h3 {
+        margin: 0.9rem 0 0.3rem;
+        font-size: 1.05rem;
+      }
+      .card p {
+        margin: 0 0 1rem;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      .card a {
+        margin-top: auto;
+        color: var(--accent);
+        font-weight: 650;
+        text-decoration: none;
+      }
+      .card a:hover {
+        text-decoration: underline;
+      }
+      .note {
+        margin-top: 1.5rem;
+        padding: 1rem 1.15rem;
+        border-left: 3px solid var(--accent);
+        border-radius: 0.35rem;
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+      footer {
+        margin-top: 2rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>RedGreen CI Reports</h1>
+      <p>
+        Resultados de testes e cobertura organizados por branch e build.
+        Selecione uma categoria para abrir os relatórios disponíveis.
+      </p>
+    </header>
+    <main>
+      <div class="eyebrow">Qualidade do backend</div>
+      <h2>Relatórios automatizados</h2>
+      <section class="cards" aria-label="Categorias de relatórios">
+        <article class="card">
+          <div class="icon" aria-hidden="true">UT</div>
+          <h3>Testes unitários</h3>
+          <p>
+            Resumo por build, resultado de cada suíte e acesso aos detalhes.
+          </p>
+          <a href="/reports/unit/">Ver builds unitários &rarr;</a>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true">CV</div>
+          <h3>Cobertura de código</h3>
+          <p>Relatório navegável por arquivo, focado nas regras de negócio.</p>
+          <a href="/reports/unit/">Escolher build e abrir cobertura &rarr;</a>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true">E2E</div>
+          <h3>Testes de API (E2E)</h3>
+          <p>Resumo dos cenários, assertions e relatórios Newman detalhados.</p>
+          <a href="/reports/e2e/">Ver builds E2E &rarr;</a>
+        </article>
+      </section>
+      <div class="note">
+        Cada pasta de build contém um índice com links para os relatórios
+        gerados naquela execução. Builds sem uma etapa executada podem não ter
+        relatório para essa categoria.
+      </div>
+      <footer>
+        Relatórios gerados pela pipeline Jenkins e servidos localmente.
+      </footer>
+    </main>
+  </body>
+</html>

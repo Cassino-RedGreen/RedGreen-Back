@@ -1,6 +1,6 @@
 jenkins:
-  systemMessage: "RedGreen-Back CI: configurado por JCasC (jenkins/casc.yaml). Mudancas feitas pela interface sao sobrescritas no proximo restart."
-  numExecutors: 2
+  systemMessage: 'RedGreen-Back CI: configurado por JCasC (jenkins/casc.yaml). Mudancas feitas pela interface sao sobrescritas no proximo restart.'
+  numExecutors: 1
   mode: NORMAL
   securityRealm:
     local:
@@ -20,26 +20,20 @@ credentials:
   system:
     domainCredentials:
       - credentials:
-          - usernamePassword:
-              scope: GLOBAL
-              id: dockerhub
-              description: "Docker Hub (usuario + access token)"
-              username: "${DOCKERHUB_USERNAME}"
-              password: "${DOCKERHUB_TOKEN}"
           - string:
               scope: GLOBAL
               id: postgres-password
-              description: "Senha do Postgres da stack de testes E2E"
+              description: 'Senha do Postgres da stack de testes E2E'
               secret: "${POSTGRES_PASSWORD}"
           - string:
               scope: GLOBAL
               id: jwt-secret
-              description: "JWT_SECRET da API na stack de testes E2E"
+              description: 'JWT_SECRET da API na stack de testes E2E'
               secret: "${JWT_SECRET}"
           - string:
               scope: GLOBAL
               id: smtp-password
-              description: "Senha do SMTP (vazia para o Mailpit)"
+              description: 'Senha do SMTP (vazia para o Mailpit)'
               secret: "${SMTP_PASSWORD:-}"
 
 jobs:

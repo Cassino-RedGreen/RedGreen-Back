@@ -1,6 +1,7 @@
 const { resolve: Resolve } = require('node:path');
 const { existsSync: ExistsSync } = require('node:fs');
 const Newman = require('newman');
+const { CreateNewmanReporterOptions } = require('./newman-reporters.cjs');
 
 const EnvPath = Resolve(__dirname, '../../.env');
 if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
@@ -15,7 +16,9 @@ async function RequireSlotMachine(BaseUrl) {
   });
   if (List.status === 200) {
     const Machines = await List.json();
-    const Found = Machines.find((M) => M.Name === SLOT_MACHINE_NAME && M.Active);
+    const Found = Machines.find(
+      (M) => M.Name === SLOT_MACHINE_NAME && M.Active
+    );
     if (Found) return String(Found.SlotMachineId);
   }
   throw new Error(
@@ -59,11 +62,17 @@ async function Run() {
   const Environment = require('./redgreen.local.postman_environment.json');
   const BaseUrl =
     process.env.TC010_BASE_URL ||
+    process.env.API_BASE_URL ||
     Environment.values.find((V) => V.key === 'baseUrl').value;
-  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]', 'api'];
   if (!LocalHosts.includes(new URL(BaseUrl).hostname)) {
     throw new Error('TC-010 requires a local API.');
   }
+  const BaseUrlEntry = Environment.values.find((V) => V.key === 'baseUrl');
+  if (BaseUrlEntry)
+    Object.assign(BaseUrlEntry, { value: BaseUrl, enabled: true });
+  else
+    Environment.values.push({ key: 'baseUrl', value: BaseUrl, enabled: true });
 
   let PlayerEmail;
   try {
@@ -78,9 +87,12 @@ async function Run() {
         {
           collection: require('./redgreen-api.postman_collection.json'),
           environment: Environment,
-          folder: 'TC-010 - Active session in one game type blocks starting the other',
-          reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
-          reporter: { json: { export: process.env.TEST_CASE_REPORT } },
+          folder:
+            'TC-010 - Active session in one game type blocks starting the other',
+          ...CreateNewmanReporterOptions(
+            'TC-010',
+            process.env.TEST_CASE_REPORT
+          ),
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },

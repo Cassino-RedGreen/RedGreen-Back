@@ -1,11 +1,19 @@
 pipeline {
   agent any
 
+  parameters {
+    booleanParam(
+      name: 'RUN_PERFORMANCE',
+      defaultValue: false,
+      description: 'Executa a suíte completa de performance (k6).'
+    )
+  }
+
   options {
     timestamps()
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
-    timeout(time: 45, unit: 'MINUTES')
+    timeout(time: 90, unit: 'MINUTES')
   }
 
   environment {
@@ -23,18 +31,30 @@ pipeline {
           def branch = (env.BRANCH_NAME ?: 'local').toLowerCase().replaceAll('[^a-z0-9]+', '-')
           env.CI_PREFIX = "redgreen-ci-${branch}-${env.BUILD_NUMBER}"
           env.CI_NETWORK = "${env.CI_PREFIX}-net"
-          env.UNIT_IMAGE = "${env.CI_PREFIX}-unit:latest"
-          env.E2E_IMAGE = "${env.CI_PREFIX}-e2e:latest"
           env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
-          env.API_IMAGE = env.DOCKERHUB_REPO ?: 'redgreen-back-api'
-          env.DOCKER_CONFIG = "${env.WORKSPACE}/.docker"
+          env.API_IMAGE = 'redgreen-back-api'
+          env.CI_WORKSPACE = "/workspace/${env.CI_PREFIX}"
+          env.COVERAGE_REPORT_URL = "${env.REPORT_SERVER_URL}/reports/unit/${env.CI_PREFIX}/coverage/lcov-report/index.html"
+          env.E2E_REPORT_URL = "${env.REPORT_SERVER_URL}/reports/e2e/${env.CI_PREFIX}/"
         }
         echo "CI prefix: ${env.CI_PREFIX} | image: ${env.API_IMAGE}:${env.IMAGE_TAG}"
         sh '''
           node --version
           npm --version
           docker version
-          mkdir -p reports test-results package
+          mkdir -p reports test-results package performance-results
+          tar -czf runner-source.tar.gz \
+            --exclude=.git \
+            --exclude='.env*' \
+            --exclude=runner-source.tar.gz \
+            --exclude=node_modules \
+            --exclude=dist \
+            --exclude=coverage \
+            --exclude=reports \
+            --exclude=test-results \
+            --exclude=test/performance/artifacts \
+            --exclude=temp \
+            .
         '''
       }
       post {
@@ -92,17 +112,28 @@ pipeline {
 
     stage('Unit Tests') {
       steps {
-        sh 'docker build -f docker/Dockerfile.unit-tests -t "$UNIT_IMAGE" .'
         script {
-          def status = sh(returnStatus: true, script: 'docker run --name "$CI_PREFIX-unit" "$UNIT_IMAGE"')
-          copyFromContainer("${env.CI_PREFIX}-unit", '/app/reports/.', 'reports/')
+          def runner = prepareRunner('unit-tests', true)
+          env.UNIT_RUNNER_ID = runner
+          def status = sh(
+            returnStatus: true,
+            script: "docker exec --workdir '${env.CI_WORKSPACE}' '${runner}' npm run test:cov"
+          )
+          copyFromContainer(runner, "${env.CI_WORKSPACE}/reports/.", 'reports/')
+          if (fileExists('reports/unit/junit.xml')) {
+            junit(testResults: 'reports/unit/junit.xml')
+            sh "node scripts/build-ci-report-index.cjs unit reports/unit/junit.xml reports/unit/index.html '${env.CI_PREFIX}' '${env.BUILD_URL}'"
+          }
           if (hasFiles('reports', '*')) {
             archiveArtifacts(artifacts: 'reports/**')
           }
-          if (fileExists('reports/unit/junit.xml')) {
-            junit(testResults: 'reports/unit/junit.xml')
-          }
-          requireReports(['reports/unit/junit.xml', 'reports/unit/coverage/cobertura-coverage.xml'], status)
+          publishReport('unit', 'reports/unit')
+          echo "Unit tests and coverage report: ${env.COVERAGE_REPORT_URL}"
+          requireReports([
+            'reports/unit/junit.xml',
+            'reports/unit/coverage/cobertura-coverage.xml',
+            'reports/unit/coverage/lcov-report/index.html',
+          ], status)
           if (status != 0) {
             error("Unit tests or the 90% coverage threshold failed (exit code ${status}).")
           }
@@ -149,7 +180,6 @@ pipeline {
           string(credentialsId: 'postgres-password', variable: 'POSTGRES_PASSWORD'),
           string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
         ]) {
-          sh 'docker build -f docker/Dockerfile.e2e-tests -t "$E2E_IMAGE" .'
           sh '''
             docker network create "$CI_NETWORK"
             docker run -d --name "$CI_PREFIX-pg" --network "$CI_NETWORK" \
@@ -160,7 +190,7 @@ pipeline {
           '''
           waitHealthy("${env.CI_PREFIX}-pg", 120)
           sh '''
-            docker run -d --name "$CI_PREFIX-api" --network "$CI_NETWORK" \
+            docker run -d --name "$CI_PREFIX-api" --network "$CI_NETWORK" --network-alias api \
               -e PORT=3000 -e POSTGRES_HOST="$CI_PREFIX-pg" -e POSTGRES_PORT=5432 \
               -e POSTGRES_USER -e POSTGRES_PASSWORD -e POSTGRES_DB -e POSTGRES_SSL=false -e JWT_SECRET \
               --health-cmd "$API_HEALTH_CMD" \
@@ -169,10 +199,21 @@ pipeline {
           '''
           waitHealthy("${env.CI_PREFIX}-api", 180)
           script {
-            def status = sh(returnStatus: true, script: 'docker run --name "$CI_PREFIX-e2e" --network "container:$CI_PREFIX-api" "$E2E_IMAGE"')
-            copyFromContainer("${env.CI_PREFIX}-e2e", '/app/test-results/.', 'test-results/')
+            def runner = prepareRunner('e2e-tests', true)
+            env.E2E_RUNNER_ID = runner
+            sh "docker network connect '${env.CI_NETWORK}' '${runner}'"
+            def status = sh(
+              returnStatus: true,
+              script: "docker exec --workdir '${env.CI_WORKSPACE}' --env API_BASE_URL=http://api:3000 '${runner}' npm run test:all"
+            )
+            copyFromContainer(runner, "${env.CI_WORKSPACE}/test-results/.", 'test-results/')
             if (hasFiles('test-results', '*')) {
+              if (findFiles(glob: 'test-results/*/summary.json').length > 0) {
+                sh "node scripts/build-ci-report-index.cjs e2e test-results '${env.CI_PREFIX}' '${env.BUILD_URL}'"
+              }
               archiveArtifacts(artifacts: 'test-results/**')
+              publishReport('e2e', 'test-results')
+              echo "E2E HTML reports: ${env.E2E_REPORT_URL}"
             }
 
             verifyE2eReports(status)
@@ -180,6 +221,39 @@ pipeline {
               sh 'docker logs --tail 200 "$CI_PREFIX-api" || true'
               error("E2E tests failed (exit code ${status}).")
             }
+          }
+        }
+      }
+      post {
+        failure {
+          markFailedStage()
+        }
+      }
+    }
+
+    stage('Performance Tests') {
+      when {
+        expression { params.RUN_PERFORMANCE }
+      }
+      steps {
+        script {
+          def runner = prepareRunner('performance')
+          env.PERFORMANCE_RUNNER_ID = runner
+          sh "docker network connect '${env.CI_NETWORK}' '${runner}'"
+          def status = sh(
+            returnStatus: true,
+            script: "docker exec --workdir '${env.CI_WORKSPACE}' --env BASE_URL=http://api:3000 '${runner}' node test/performance/run-all.cjs"
+          )
+          copyFromContainer(
+            runner,
+            "${env.CI_WORKSPACE}/test/performance/artifacts/.",
+            'performance-results/'
+          )
+          if (hasFiles('performance-results', '*')) {
+            archiveArtifacts(artifacts: 'performance-results/**')
+          }
+          if (status != 0) {
+            error("Performance tests failed (exit code ${status}).")
           }
         }
       }
@@ -220,11 +294,15 @@ pipeline {
     always {
       sh '''
         if [ -n "${CI_PREFIX:-}" ]; then
-          docker rm -f "$CI_PREFIX-unit" "$CI_PREFIX-dist" "$CI_PREFIX-e2e" "$CI_PREFIX-api" "$CI_PREFIX-pg" >/dev/null 2>&1 || true
+          for runner in "${E2E_RUNNER_ID:-}" "${PERFORMANCE_RUNNER_ID:-}"; do
+            if [ -n "$runner" ]; then
+              docker network disconnect "$CI_NETWORK" "$runner" >/dev/null 2>&1 || true
+            fi
+          done
+          docker rm -f "$CI_PREFIX-dist" "$CI_PREFIX-api" "$CI_PREFIX-pg" >/dev/null 2>&1 || true
           docker network rm "$CI_NETWORK" >/dev/null 2>&1 || true
-          docker image rm "$UNIT_IMAGE" "$E2E_IMAGE" "$API_IMAGE:$IMAGE_TAG" "$API_IMAGE:latest" >/dev/null 2>&1 || true
+          docker image rm "$API_IMAGE:$IMAGE_TAG" >/dev/null 2>&1 || true
         fi
-        docker logout >/dev/null 2>&1 || true
       '''
       withCredentials([string(credentialsId: 'smtp-password', variable: 'SMTP_PASSWORD')]) {
         script {
@@ -248,6 +326,53 @@ pipeline {
 
 def markFailedStage() {
   env.FAILED_STAGE = env.FAILED_STAGE ? "${env.FAILED_STAGE}, ${env.STAGE_NAME}" : env.STAGE_NAME
+}
+
+def prepareRunner(String service, boolean installDependencies = false) {
+  def output = sh(
+    returnStdout: true,
+    script: "docker ps -q --filter label=com.docker.compose.project=redgreen --filter label=com.docker.compose.service='${service}'"
+  ).trim()
+  def runners = output ? output.split('\n') : []
+  if (runners.length != 1) {
+    def command = service == 'performance'
+      ? 'docker compose --profile performance up -d --build performance'
+      : 'docker compose up -d --build'
+    error("Expected one running Compose runner for '${service}', found ${runners.length}. Start it with '${command}'.")
+  }
+
+  def runner = runners[0]
+  withEnv(["RUNNER_ID=${runner}", "RUNNER_WORKSPACE=${env.CI_WORKSPACE}"]) {
+    sh '''
+      docker exec "$RUNNER_ID" mkdir -p "$RUNNER_WORKSPACE"
+      docker cp "$WORKSPACE/runner-source.tar.gz" "$RUNNER_ID:/tmp/runner-source.tar.gz"
+      docker exec "$RUNNER_ID" tar -xzf /tmp/runner-source.tar.gz -C "$RUNNER_WORKSPACE"
+      docker exec "$RUNNER_ID" rm /tmp/runner-source.tar.gz
+    '''
+    if (installDependencies) {
+      sh "docker exec --workdir '${env.CI_WORKSPACE}' '${runner}' npm ci --no-audit --no-fund"
+    }
+  }
+  return runner
+}
+
+def publishReport(String type, String source) {
+  if (!hasFiles(source, '*')) {
+    echo "No files found at ${source}; nothing to publish for ${type}."
+    return
+  }
+  withEnv([
+    "REPORT_TYPE=${type}",
+    "REPORT_SOURCE=${source}",
+    "REPORT_BUILD_KEY=${env.CI_PREFIX}",
+  ]) {
+    sh '''
+      target="$REPORTS_VOLUME_PATH/$REPORT_TYPE/$REPORT_BUILD_KEY"
+      mkdir -p "$target"
+      cp -a "$REPORT_SOURCE"/. "$target"/
+      node scripts/build-ci-report-index.cjs listing "$REPORT_TYPE" "$REPORTS_VOLUME_PATH/$REPORT_TYPE"
+    '''
+  }
 }
 
 def copyFromContainer(String container, String source, String target) {
@@ -343,7 +468,7 @@ def checkE2eReports(String resultsDir) {
     return [missing: ["${summary} (no scenarios listed)"], withoutJunit: []]
   }
 
-  // 4. Check each scenario. The paths in summary.json are container paths (/app/test-results/...),
+  // 4. Check each scenario. The paths in summary.json are runner-container paths,
   //    so only the file name is kept and looked up in the copied run folder.
   //    Newman JSON missing => required (FAILURE); JUnit missing => only listed (optional).
   def missing = []

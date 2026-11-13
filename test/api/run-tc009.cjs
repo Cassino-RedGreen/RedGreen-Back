@@ -5,11 +5,15 @@ const {
   writeFileSync: WriteFileSync,
 } = require('node:fs');
 const Newman = require('newman');
+const { CreateNewmanReporterOptions } = require('./newman-reporters.cjs');
 
 const EnvPath = Resolve(__dirname, '../../.env');
 if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
 
-const EnvironmentPath = Resolve(__dirname, './redgreen.local.postman_environment.json');
+const EnvironmentPath = Resolve(
+  __dirname,
+  './redgreen.local.postman_environment.json'
+);
 
 const SLOT_MACHINE_NAME = 'Slot 1';
 const PLAYER_PASSWORD = 'Tc009Password123!';
@@ -34,7 +38,9 @@ async function RequireSlotMachine(BaseUrl) {
   });
   if (List.status === 200) {
     const Machines = await List.json();
-    const Found = Machines.find((M) => M.Name === SLOT_MACHINE_NAME && M.Active);
+    const Found = Machines.find(
+      (M) => M.Name === SLOT_MACHINE_NAME && M.Active
+    );
     if (Found) return String(Found.SlotMachineId);
   }
   throw new Error(
@@ -64,8 +70,9 @@ async function Run() {
   const Environment = LoadEnvironment();
   const BaseUrl =
     process.env.TC009_BASE_URL ||
+    process.env.API_BASE_URL ||
     Environment.values.find((V) => V.key === 'baseUrl').value;
-  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]', 'api'];
   if (!LocalHosts.includes(new URL(BaseUrl).hostname)) {
     throw new Error('TC-009 requires a local API.');
   }
@@ -76,7 +83,9 @@ async function Run() {
 
     SetVar(Environment, 'baseUrl', BaseUrl);
     SaveEnvironment(Environment);
-    console.log(`TC-009: using the shared "${SLOT_MACHINE_NAME}" (#${SlotMachineId}) table.`);
+    console.log(
+      `TC-009: using the shared "${SLOT_MACHINE_NAME}" (#${SlotMachineId}) table.`
+    );
 
     await new Promise((ResolveRun, Reject) => {
       Newman.run(
@@ -84,8 +93,10 @@ async function Run() {
           collection: require('./redgreen-api.postman_collection.json'),
           environment: Environment,
           folder: 'TC-009 - User cannot start two simultaneous slot sessions',
-          reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
-          reporter: { json: { export: process.env.TEST_CASE_REPORT } },
+          ...CreateNewmanReporterOptions(
+            'TC-009',
+            process.env.TEST_CASE_REPORT
+          ),
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },

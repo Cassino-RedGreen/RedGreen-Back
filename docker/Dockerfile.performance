@@ -1,0 +1,10 @@
+FROM grafana/k6:0.54.0 AS k6
+
+FROM node:24-bookworm-slim
+
+WORKDIR /workspace
+
+COPY --from=k6 /usr/bin/k6 /usr/local/bin/k6
+COPY test/performance ./test/performance
+
+CMD ["sleep", "infinity"]

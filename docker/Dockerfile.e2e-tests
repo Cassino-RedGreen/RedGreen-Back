@@ -1,21 +1,8 @@
-ARG NODE_VERSION=24
+FROM node:24-bookworm-slim
 
-FROM node:${NODE_VERSION}-bookworm-slim
+WORKDIR /workspace
 
-WORKDIR /app
+ENV HUSKY=0 \
+    CI=true
 
-ENV HUSKY=0
-
-COPY package.json package-lock.json ./
-COPY scripts/patch-newman.cjs ./scripts/
-RUN npm ci
-
-COPY scripts/run-all-tests.cjs ./scripts/
-COPY --chown=node:node test/api ./test/api
-
-RUN mkdir -p /app/test-results && chown node:node /app/test-results
-
-ENV CI=true
-USER node
-
-CMD ["npm", "run", "test:all"]
+CMD ["sleep", "infinity"]

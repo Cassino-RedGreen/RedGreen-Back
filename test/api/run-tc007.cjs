@@ -1,7 +1,11 @@
-const { randomUUID: RandomUUID, randomBytes: RandomBytes } = require('node:crypto');
+const {
+  randomUUID: RandomUUID,
+  randomBytes: RandomBytes,
+} = require('node:crypto');
 const { resolve: Resolve } = require('node:path');
 const { existsSync: ExistsSync } = require('node:fs');
 const Newman = require('newman');
+const { CreateNewmanReporterOptions } = require('./newman-reporters.cjs');
 
 const EnvPath = Resolve(__dirname, '../../.env');
 if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
@@ -33,8 +37,9 @@ async function Run() {
   );
   const BaseUrl =
     process.env.TC007_BASE_URL ||
+    process.env.API_BASE_URL ||
     Environment.values.find((V) => V.key === 'baseUrl').value;
-  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]'];
+  const LocalHosts = ['localhost', '127.0.0.1', '::1', '[::1]', 'api'];
   if (!LocalHosts.includes(new URL(BaseUrl).hostname)) {
     throw new Error('TC-007 requires a local API.');
   }
@@ -112,8 +117,10 @@ async function Run() {
           collection: require('./redgreen-api.postman_collection.json'),
           environment: Environment,
           folder: 'TC-007 - Player ranking displayed correctly',
-          reporters: process.env.TEST_CASE_REPORT ? ['cli', 'json'] : ['cli'],
-          reporter: { json: { export: process.env.TEST_CASE_REPORT } },
+          ...CreateNewmanReporterOptions(
+            'TC-007',
+            process.env.TEST_CASE_REPORT
+          ),
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },

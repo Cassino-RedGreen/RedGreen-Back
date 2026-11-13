@@ -6,6 +6,7 @@ const {
   ResolveApiReportPath,
   StartStandaloneLog,
 } = require('./api-report-path.cjs');
+const { CreateNewmanReporterOptions } = require('./newman-reporters.cjs');
 
 const EnvPath = Resolve(__dirname, '../../.env');
 if (ExistsSync(EnvPath)) process.loadEnvFile(EnvPath);
@@ -19,10 +20,11 @@ async function RunApiCaseWithReport(
   );
   const Read = (Key) => Environment.values.find((V) => V.key === Key)?.value;
   const Prefix = Case.toLowerCase();
-  const BaseUrl = (process.env[`${Case}_BASE_URL`] || Read('baseUrl')).replace(
-    /\/$/,
-    ''
-  );
+  const BaseUrl = (
+    process.env[`${Case}_BASE_URL`] ||
+    process.env.API_BASE_URL ||
+    Read('baseUrl')
+  ).replace(/\/$/, '');
   const Suffix = RandomUUID();
   const ResourceName = `${Case} ${Resource.Label} ${Suffix}`;
   const UserEmails =
@@ -50,17 +52,7 @@ async function RunApiCaseWithReport(
     else Environment.values.push({ key: Key, value: Value, enabled: true });
   }
 
-  const ReportExports = {};
-  if (process.env.TEST_CASE_REPORT)
-    ReportExports.json = { export: process.env.TEST_CASE_REPORT };
-  if (process.env.TEST_CASE_HTML_REPORT)
-    ReportExports.htmlextra = {
-      export: process.env.TEST_CASE_HTML_REPORT,
-      title: Case,
-      skipSensitiveData: true,
-    };
-  if (process.env.TEST_CASE_JUNIT_REPORT)
-    ReportExports.junit = { export: process.env.TEST_CASE_JUNIT_REPORT };
+  const ReporterOptions = CreateNewmanReporterOptions(Case, Report);
 
   let AdminToken;
   let ResourceId;
@@ -128,8 +120,7 @@ async function RunApiCaseWithReport(
           collection: require('./redgreen-api.postman_collection.json'),
           environment: Environment,
           folder: Folder,
-          reporters: ['cli', 'json'],
-          reporter: { json: { export: Report } },
+          ...ReporterOptions,
           timeoutRequest: 15000,
           timeoutScript: 30000,
         },
