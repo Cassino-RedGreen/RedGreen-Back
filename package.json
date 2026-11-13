@@ -52,9 +52,10 @@
     "test:load": "k6 run --out json=test/performance/artifacts/load-report.json test/performance/sustained-load.js",
     "test:stress": "k6 run --out json=test/performance/artifacts/stress-report.json test/performance/session-concurrency.js",
     "test:performance": "node test/performance/run-all.cjs",
+    "compose:performance": "docker compose --profile performance run --build --rm --entrypoint node performance test/performance/run-all.cjs",
     "test:vu-scale": "k6 run --out json=test/performance/artifacts/vu-scale-report.json test/performance/vu-scale.js",
     "postinstall": "node scripts/patch-newman.cjs",
-    "test:tooling": "node --test test/tooling/newman-compat.test.cjs"
+    "test:tooling": "node --test test/tooling/newman-compat.test.cjs test/tooling/ci-report-index.test.cjs"
   },
   "lint-staged": {
     "*.ts": [
@@ -173,14 +174,15 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "src/**/*.ts"
+      "src/modules/**/application/**/*.ts"
     ],
     "coverageDirectory": "<rootDir>/reports/unit/coverage",
     "coverageReporters": [
       "text",
       "text-summary",
       "lcov",
-      "cobertura"
+      "cobertura",
+      "html"
     ],
     "coverageThreshold": {
       "global": {
