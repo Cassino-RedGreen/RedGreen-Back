@@ -1,8 +1,5 @@
 # Red & Green Cassino - API Backend
 
-[![CI/CD](https://github.com/Cassino-RedGreen/RedGreen-Back/actions/workflows/ci.yml/badge.svg)](https://github.com/Cassino-RedGreen/RedGreen-Back/actions/workflows/ci.yml)
-[![GitHub Pages](https://img.shields.io/github/deployments/Cassino-RedGreen/RedGreen-Back/github-pages?label=github%20pages)](https://cassino-redgreen.github.io/RedGreen-Back/)
-
 Responsável por gerenciar toda a inteligência e segurança do cassino, garantindo que a lógica dos jogos, a geração de números aleatórios (RNG) e as transações de fichas ocorram em um ambiente seguro e isolado.
 
 ---
@@ -16,6 +13,7 @@ Responsável por gerenciar toda a inteligência e segurança do cassino, garanti
 - [Executando o Projeto](#executando-o-projeto)
 - [Variáveis de Ambiente](#variáveis-de-ambiente)
 - [Comandos Importantes](#comandos-importantes)
+- [Docker](#docker)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Pipeline de CI/CD](#pipeline-de-cicd)
 - [Deploy](#deploy)
@@ -51,9 +49,10 @@ Responsável por gerenciar toda a inteligência e segurança do cassino, garanti
 | **Documentação**             | Swagger (OpenAPI)                                   |
 | **Testes**                   | Jest, ts-jest, Newman/Postman, node:test, Supertest |
 | **Qualidade e Padronização** | ESLint, Prettier, Husky, Commitlint, lint-staged    |
-| **CI/CD**                    | GitHub Actions                                      |
+| **CI/CD**                    | Jenkins, Jenkins Configuration as Code              |
 | **Deploy**                   | Render (API) + Neon (PostgreSQL)                    |
 | **Infraestrutura Local**     | Docker / Docker Compose                             |
+| **Relatórios de CI**         | Jenkins artifacts + servidor estático Nginx         |
 
 ---
 
@@ -83,12 +82,7 @@ Código transversal (decorators, filters, guards) fica em `src/core/`.
 Certifique-se de ter instalado em sua máquina:
 
 - **Node.js 24** (a versão é fixada em [`.node-version`](.node-version))
-- **Docker** (para subir o PostgreSQL localmente)
-- **k6** (para rodar os testes de performance em `test/performance/`)
-
-```bash
-winget install k6 --source winget
-```
+- **Docker Desktop** com Docker Compose v2.
 
 ---
 
@@ -106,13 +100,15 @@ cp .env.example .env
 npm install
 ```
 
-#### 3. Suba o container do banco (Docker)
+#### 3. Suba o container do banco
 
 ```bash
-docker compose up -d
+docker compose up -d postgres
 ```
 
-#### 4. Inicie o servidor do NestJS
+A porta publicada `5433` corresponde ao `POSTGRES_PORT` do `.env.example`.
+
+#### 4. Inicie a API localmente
 
 ```bash
 npm run start:dev
@@ -159,6 +155,48 @@ Definidas no `.env` (veja o template em [`.env.example`](.env.example)). A aplic
 | `npm run lint:check`   | Roda o ESLint apenas verificando (usado no CI).     |
 | `npm run format`       | Formata o código com o Prettier (`--write`).        |
 | `npm run format:check` | Verifica a formatação com o Prettier (usado no CI). |
+
+---
+
+## Docker
+
+O [`docker-compose.yml`](docker-compose.yml) é o fluxo recomendado para desenvolvimento local e CI. Ele define serviços para PostgreSQL, API, Jenkins, Mailpit e runners isolados de testes unitários, E2E e performance, com Dockerfiles independentes em `docker/`.
+
+Crie o `.env` e preencha as credenciais de Jenkins e um `JWT_SECRET` forte antes de iniciar os serviços:
+
+```bash
+cp .env.example .env
+# Edite .env: defina as credenciais do Jenkins e substitua JWT_SECRET por um valor forte
+docker compose up -d --build
+```
+
+O comando padrão sobe o ambiente completo de CI: PostgreSQL, API, Jenkins, Mailpit, servidor de relatórios e runners unitário e E2E. A API aguarda o banco ficar saudável. O runner k6 não é construído nem iniciado nesse fluxo; a execução de performance é opcional. O banco persiste no volume nomeado `postgres_data` e fica disponível no host em `localhost:5433`. A documentação Swagger fica em `http://localhost:3000/api`.
+
+Para acompanhar ou parar os serviços:
+
+```bash
+docker compose ps
+docker compose logs -f jenkins
+docker compose --profile performance down
+```
+
+O comando `down` preserva os volumes. Para também apagar o banco, o histórico do Jenkins e os relatórios publicados, use `docker compose --profile performance down -v`.
+
+Jenkins fica em `http://localhost:8080`, Mailpit em `http://localhost:8025` e o servidor navegável de relatórios em `http://localhost:8088`. O job usa os runners Compose em execução por comandos Docker; não cria runners efêmeros para os testes. Veja a seção [Pipeline CI/CD (Jenkins)](#pipeline-cicd-jenkins) para configurar o `.env`.
+
+Os testes de performance são opcionais. Para habilitar a etapa de performance na pipeline, inicie também o runner k6 antes do build:
+
+```bash
+docker compose --profile performance up -d --build performance
+```
+
+O comando abaixo executa a suíte completa k6 localmente no container dedicado, sem instalar k6 na máquina:
+
+```bash
+npm run compose:performance
+```
+
+Esse comando inicia PostgreSQL e API quando necessário, aguarda a API ficar saudável e executa os três cenários. Retorna o código da suíte (incluindo falhas de thresholds); os relatórios ficam em `test/performance/artifacts/`. O diretório local é montado como bind mount para permitir acesso direto aos arquivos.
 
 ---
 
@@ -210,68 +248,13 @@ Cada módulo segue o padrão de camadas `domain/` · `application/` · `presenta
 
 ## Pipeline de CI/CD
 
-O workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) executa no GitHub Actions com Node definido em [`.node-version`](.node-version), cache npm e instalação por `npm ci`. O badge no topo abre as execuções do workflow.
-
-Os gatilhos são pushes em qualquer branch, PRs de forks e execução manual. PRs internas são cobertas pelo push para evitar execuções duplicadas. Um novo evento na mesma referência cancela a execução anterior.
-
-| Job              | Validação                                                                                                                                            |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lint`           | ESLint: `npm run lint:check`.                                                                                                                        |
-| `format`         | Prettier: `npm run format:check`.                                                                                                                    |
-| `audit`          | Dependências: `npm audit --audit-level=high`.                                                                                                        |
-| `test`           | Testes unitários Jest e compatibilidade Newman com `node:test`.                                                                                      |
-| `build`          | Após os quatro jobs anteriores, compila TypeScript com `npm run build`.                                                                              |
-| `Publish Report` | Após os cinco jobs anteriores, o relatorio é gerado e o link segue no badge do readme`.                                                              |
-| `api`            | Sobe PostgreSQL via Docker Compose e API compilada; executa os 25 cenários com `npm run test:all`. Publica logs e relatórios mesmo em caso de falha. |
-| `ci`             | Consolida o sucesso do build e dos testes de API.                                                                                                    |
-| `deploy`         | Depende de `ci`; dispara o Deploy Hook do Render apenas em push na `main`.                                                                           |
-
-### Evolução do CI e dos Relatórios — PR #10
-
-A [PR #10 — ci: added test e2e job](https://github.com/Cassino-RedGreen/RedGreen-Back/pull/10), na branch `ci/add-test-e2e-job`, propõe as mudanças abaixo. **Ainda pendentes de integração na `main`**, elas descrevem o workflow dessa PR e não substituem a configuração atual documentada acima. Referência revisada: commit `286ba23`.
-
-| Recurso                   | Comportamento proposto na PR                                                                                                                                                       |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Job `test-e2e`            | Executa `npm run test:all` contra a API real, após lint, formatação e auditoria. O nome E2E se refere à suite Newman, não ao comando Jest `test:e2e`.                              |
-| Banco e API no CI         | PostgreSQL 15 como serviço Docker do GitHub Actions; compila e inicia a API, aguardando a rota raiz responder antes dos testes.                                                    |
-| Ordem de validação        | Jest e Newman rodam em jobs paralelos após os checks iniciais; o job final `build` depende do sucesso de ambos.                                                                    |
-| Relatórios adicionais     | Adiciona `newman-reporter-htmlextra` e exportação JUnit, além dos logs e JSON existentes. Os nomes previstos são `report-test-api-tcNNN.html` e `junit-test-api-tcNNN.xml`.        |
-| Resumo no Actions         | `scripts/write-e2e-summary.cjs` escreve no resumo da execução: resultado, requisições, assertions, duração por cenário e detalhes das falhas.                                      |
-| Artefato para download    | `e2e-test-results`, com retenção de 14 dias; o upload é tentado mesmo quando os testes falham.                                                                                     |
-| Publicação dos relatórios | `publish-report` gera o site em `_site/` e publica no GitHub Pages em pushes na `main`, inclusive quando a suite falha, desde que não tenha sido ignorada ou a execução cancelada. |
-
-#### Configuração exigida pela PR
-
-Em **Settings → Secrets and variables → Actions**, configure os valores usados pelo serviço PostgreSQL e pela API do runner:
-
-| Tipo     | Nome                | Configuração                                                                        |
-| -------- | ------------------- | ----------------------------------------------------------------------------------- |
-| Variable | `PORT`              | Porta da API; use `3000` para corresponder ao `baseUrl` padrão do ambiente Postman. |
-| Variable | `POSTGRES_HOST`     | `localhost`, para acessar o serviço Docker pelo runner.                             |
-| Variable | `POSTGRES_PORT`     | Porta publicada no runner, por exemplo `5433`; o container usa internamente `5432`. |
-| Variable | `POSTGRES_USER`     | Usuário criado no PostgreSQL de testes.                                             |
-| Variable | `POSTGRES_DB`       | Banco criado no PostgreSQL de testes.                                               |
-| Variable | `POSTGRES_SSL`      | `false` para o serviço local de testes.                                             |
-| Secret   | `POSTGRES_PASSWORD` | Senha do PostgreSQL de testes.                                                      |
-| Secret   | `JWT_SECRET`        | Segredo para assinatura dos tokens da API no CI.                                    |
-
-O job verifica se os valores estão preenchidos sem imprimi-los. Para publicar os relatórios, configure **Settings → Pages → Build and deployment → Source: GitHub Actions**. O job usa o ambiente `github-pages` e permissões `pages: write` e `id-token: write`; o link publicado aparece no resumo da execução.
-
-#### Consulta dos resultados após a integração
-
-Na aba **Actions**, abra a execução para consultar o resumo ou baixar `e2e-test-results`. O site gerado por `scripts/build-pages-index.cjs` mostra resultado por cenário, requisições, assertions aprovadas, duração e links para os relatórios HTML disponíveis, além de data, commit e execução.
-
-O site publica somente o índice e os arquivos `report-*.html`; JSON, JUnit e logs permanecem no artefato. O reporter HTML usa `skipSensitiveData`. Se não houver resultados, o site informa essa ausência; cenários sem HTML aparecem sem link para relatório.
-
-A PR altera o agregador e o runner compartilhado para exportar os novos formatos. Como os runners desta branch já evoluíram, a integração deve conferir a geração de HTML/JUnit em cada cenário e conciliar `test-e2e` com o job `api` atual, evitando executar a mesma suite duas vezes. Os scripts de resumo e publicação citados nesta seção pertencem à PR e ainda não estão disponíveis nesta branch.
+O CI é executado pelo Jenkins, com configuração versionada em JCasC/Job DSL e no `Jenkinsfile`. Este repositório não utiliza GitHub Actions; os detalhes de inicialização e execução estão em [Pipeline CI/CD (Jenkins)](#pipeline-cicd-jenkins).
 
 ---
 
-### Deploy
+## Deploy
 
-Configure o secret `RENDER_DEPLOY_HOOK` em **Settings → Secrets and variables → Actions** e desative o auto-deploy do serviço Render para que a publicação dependa do CI. Sem o secret, a etapa informa que o deploy não está configurado e não envia a requisição.
-
-O POST no hook solicita o deploy; o sucesso desse passo não confirma que a publicação no Render terminou. A API utiliza PostgreSQL no Neon em produção, com `POSTGRES_SSL=true` e as demais variáveis `POSTGRES_*` configuradas no serviço.
+O deploy para Render/Neon ainda é gerenciado fora desta pipeline Jenkins. A API utiliza PostgreSQL no Neon em produção, com `POSTGRES_SSL=true` e as demais variáveis `POSTGRES_*` configuradas no serviço.
 
 ---
 
@@ -282,57 +265,41 @@ Pipeline local em container, configurado só por código: imagem em [`docker/Doc
 ### Pré-requisitos
 
 - **Docker Desktop** em execução.
-- **Git Bash** no Windows, para rodar os comandos abaixo. No Linux/macOS, qualquer shell `bash`.
+- **Node.js 24** e **Docker Compose v2**.
 
 ### Configuração do `.env`
 
-Copie do [`.env.example`](.env.example) os blocos `Jenkins`, `Docker Hub`, `Email` e `SMTP (Mailpit)` para o seu `.env`. Escreva os valores sem aspas.
+Copie [`.env.example`](.env.example) para `.env`, preencha os campos de Jenkins e defina um `JWT_SECRET` forte. Para notificação por e-mail, o padrão usa o Mailpit local.
 
-| Variável                                                  | Obrigatória | Descrição                                                                                                                |
-| --------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `JENKINS_ADMIN_USER`                                      | sim         | Usuário admin criado pelo JCasC. O setup wizard está desligado: vazia, o Jenkins sobe sem nenhum usuário capaz de logar. |
-| `JENKINS_ADMIN_PASSWORD`                                  | sim         | Senha do admin (forte, 16+ caracteres). Mesma regra da linha acima.                                                      |
-| `POSTGRES_PASSWORD`                                       | sim         | Senha do PostgreSQL da stack de testes E2E.                                                                              |
-| `JWT_SECRET`                                              | sim         | Segredo da API na stack de testes E2E.                                                                                   |
-| `DOCKER_SOCKET_GID`                                       | sim         | Grupo do socket do Docker: `0` no Docker Desktop; no Linux, `stat -c %g /var/run/docker.sock`.                           |
-| `JENKINS_PORT`, `JENKINS_PUBLIC_URL`, `MAILPIT_UI_PORT`   | não         | Portas e URL pública (padrão `8080` e `8025`). Se mudar `JENKINS_PORT`, ajuste a porta em `JENKINS_PUBLIC_URL`.          |
-| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `DOCKERHUB_REPO` | não         | Só para publicar a imagem na `main`. Nas outras branches a etapa de publicação é pulada.                                 |
-| `EMAIL_TO`, `EMAIL_FROM`, `SMTP_*`                        | não         | Destino e servidor do e-mail de resultado. O padrão envia para o Mailpit.                                                |
-
-Para gerar o `DOCKERHUB_TOKEN`: no Docker Hub, **Account settings → Personal access tokens → Generate new token**, com permissão **Read & Write**. Use o token, não a senha da conta.
+| Variável                                                                                           | Obrigatória | Descrição                                                                                                     |
+| -------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `JENKINS_ADMIN_USER`                                                                               | sim         | Usuário admin provisionado por código (JCasC e init hook). O Compose recusa iniciar Jenkins se estiver vazio. |
+| `JENKINS_ADMIN_PASSWORD`                                                                           | sim         | Senha forte do admin (16+ caracteres). O Compose recusa iniciar Jenkins se estiver vazia.                     |
+| `POSTGRES_PASSWORD`                                                                                | sim         | Senha do PostgreSQL da stack de testes E2E.                                                                   |
+| `JWT_SECRET`                                                                                       | sim         | Segredo da API na stack de testes E2E.                                                                        |
+| `DOCKER_SOCKET_GID`                                                                                | sim         | Grupo do socket do Docker: `0` no Docker Desktop; no Linux, `stat -c %g /var/run/docker.sock`.                |
+| `JENKINS_PORT`, `JENKINS_PUBLIC_URL`, `MAILPIT_UI_PORT`, `REPORT_SERVER_PORT`, `REPORT_SERVER_URL` | não         | Portas e URL pública dos serviços (padrão `8080`, `8025` e `8088`).                                           |
+| `EMAIL_TO`, `EMAIL_FROM`, `SMTP_*`                                                                 | não         | Destino e servidor do e-mail de resultado. O padrão envia para o Mailpit.                                     |
 
 > **Nunca commite o `.env`.** Ele já está no `.gitignore` e guarda senhas e tokens.
 
-### Subindo Jenkins e Mailpit
+### Subindo a stack completa
 
 Na raiz do repositório:
 
 ```bash
-(
-  set -a; . ./.env; set +a
-  : "${JENKINS_ADMIN_USER:?defina JENKINS_ADMIN_USER no .env}" "${JENKINS_ADMIN_PASSWORD:?defina JENKINS_ADMIN_PASSWORD no .env}"
-  export MSYS_NO_PATHCONV=1
-  docker build -f docker/Dockerfile.jenkins -t redgreen-jenkins:local jenkins
-  docker network create redgreen-jenkins
-  docker run -d --name redgreen-mailpit --network redgreen-jenkins --network-alias mailpit \
-    -p 127.0.0.1:${MAILPIT_UI_PORT}:8025 --restart unless-stopped axllent/mailpit:latest
-  docker run -d --name redgreen-jenkins --network redgreen-jenkins \
-    -p 127.0.0.1:${JENKINS_PORT}:8080 --group-add "${DOCKER_SOCKET_GID}" \
-    -v redgreen_jenkins_home:/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock \
-    --env-file .env --restart unless-stopped redgreen-jenkins:local
-)
+docker compose up -d --build
 ```
 
-- Os parênteses fazem o bloco inteiro parar se a checagem do admin falhar. Sem eles, o terminal mostra o erro e continua nas linhas seguintes.
-- `MSYS_NO_PATHCONV=1` só é necessário no Git Bash (evita a conversão de `/var/run/docker.sock` para caminho do Windows). No Linux/macOS a linha não tem efeito e o comando é o mesmo; só confira o `DOCKER_SOCKET_GID` no Linux.
-- Para acompanhar a subida: `docker logs -f redgreen-jenkins`, até aparecer `Jenkins is fully up and running` (Ctrl+C fecha só o log).
+O comando padrão sobe sete serviços de longa execução: PostgreSQL, API, Jenkins, Mailpit, servidor de relatórios e runners unitário e E2E. Um serviço one-shot cria os diretórios dos relatórios e ajusta as permissões do volume compartilhado antes de iniciar Jenkins e Nginx. O runner de performance é um serviço opcional, ativado com `docker compose --profile performance up -d --build performance`; subir o runner não executa k6. Para acompanhar a inicialização, use `docker compose logs -f jenkins`.
 
 ### Acesso
 
-| Serviço | Endereço                             | Observação                                                 |
-| ------- | ------------------------------------ | ---------------------------------------------------------- |
-| Jenkins | `http://localhost:<JENKINS_PORT>`    | Login com `JENKINS_ADMIN_USER` / `JENKINS_ADMIN_PASSWORD`. |
-| Mailpit | `http://localhost:<MAILPIT_UI_PORT>` | Caixa de entrada dos e-mails do pipeline.                  |
+| Serviço    | Endereço                                | Observação                                                       |
+| ---------- | --------------------------------------- | ---------------------------------------------------------------- |
+| Jenkins    | `http://localhost:<JENKINS_PORT>`       | Login com `JENKINS_ADMIN_USER` / `JENKINS_ADMIN_PASSWORD`.       |
+| Mailpit    | `http://localhost:<MAILPIT_UI_PORT>`    | Caixa de entrada dos e-mails do pipeline.                        |
+| Relatórios | `http://localhost:<REPORT_SERVER_PORT>` | Índice HTML com cobertura e relatórios E2E arquivados por build. |
 
 As portas são publicadas só em `127.0.0.1`: os serviços não ficam acessíveis por outras máquinas da rede.
 
@@ -340,41 +307,50 @@ O job `RedGreen-Back` é multibranch e lê o repositório do GitHub (não a cóp
 
 ### Etapas do pipeline
 
-| Etapa                 | O que faz                                                                                      |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| Prepare               | Define nomes únicos por build e a tag da imagem (`<build>-<commit>`).                          |
-| Install Dependencies  | `npm ci`.                                                                                      |
-| Quality               | Lint, formatação e `npm audit --audit-level=high`, em paralelo.                                |
-| Unit Tests            | Jest com cobertura em container; o build falha abaixo de 90% de cobertura.                     |
-| Build & Package       | Builda a imagem da API (`docker/Dockerfile.api`) e gera o pacote `redgreen-back-<tag>.tar.gz`. |
-| E2E Tests             | Sobe PostgreSQL e API isolados e roda os cenários Newman contra a imagem recém-buildada.       |
-| Publish to Docker Hub | Só na `main`: publica as tags `<tag>` e `latest`.                                              |
-| Pós-build             | Sempre: remove containers, rede e imagens do build e envia o e-mail de resultado.              |
+| Etapa                | O que faz                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| Prepare              | Define nomes únicos por build e a tag da imagem (`<build>-<commit>`).                       |
+| Install Dependencies | `npm ci`.                                                                                   |
+| Quality              | Lint, formatação e `npm audit --audit-level=high`, em paralelo.                             |
+| Unit Tests           | Copia o checkout para o runner Compose e executa Jest com cobertura; falha abaixo de 90%.   |
+| Build & Package      | Builda a imagem local da API (`docker/Dockerfile.api`) e gera `redgreen-back-<tag>.tar.gz`. |
+| E2E Tests            | Sobe PostgreSQL e API isolados e executa Newman no runner Compose contra a imagem da API.   |
+| Performance Tests    | Opcional pelo parâmetro `RUN_PERFORMANCE`; executa a suíte k6 no runner Compose.            |
+| Pós-build            | Sempre: remove containers/rede de teste, arquiva relatórios e envia e-mail de resultado.    |
 
 Relatórios verificados ao fim das etapas de teste:
 
-| Relatório                                                                               | Tipo        | Se faltar                         |
-| --------------------------------------------------------------------------------------- | ----------- | --------------------------------- |
-| `reports/unit/junit.xml` e `reports/unit/coverage/cobertura-coverage.xml`               | obrigatório | `FAILURE`                         |
-| `redgreen-back-<tag>.tar.gz`                                                            | obrigatório | `FAILURE`                         |
-| `test-results/<timestamp>/summary.json` e o JSON do Newman de cada cenário listado nele | obrigatório | `FAILURE`                         |
-| `test-results/<timestamp>/junit-*.xml`                                                  | opcional    | `UNSTABLE` (só se nenhum existir) |
+| Relatório                                                                               | Tipo          | Se faltar                                        |
+| --------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------ |
+| `reports/unit/junit.xml` e `reports/unit/coverage/cobertura-coverage.xml`               | obrigatório   | `FAILURE`                                        |
+| `redgreen-back-<tag>.tar.gz`                                                            | obrigatório   | `FAILURE`                                        |
+| `test-results/<timestamp>/summary.json` e o JSON do Newman de cada cenário listado nele | obrigatório   | `FAILURE`                                        |
+| `test-results/<timestamp>/junit-*.xml`                                                  | opcional      | `UNSTABLE` (só se nenhum existir)                |
+| `performance-results/**`                                                                | se habilitado | Arquivado quando `RUN_PERFORMANCE` estiver ativo |
+
+### Relatórios HTML e volumes
+
+O site em `http://localhost:<REPORT_SERVER_PORT>` apresenta as três categorias de relatórios. Abra uma categoria e selecione o build:
+
+- **Unitários:** `http://localhost:<REPORT_SERVER_PORT>/reports/unit/<branch-build>/index.html` mostra o resumo por suíte, com links para os resultados detalhados no Jenkins e para o XML JUnit.
+- **Cobertura:** `http://localhost:<REPORT_SERVER_PORT>/reports/unit/<branch-build>/coverage/lcov-report/index.html` abre a navegação por arquivo do Jest.
+- **E2E:** `http://localhost:<REPORT_SERVER_PORT>/reports/e2e/<branch-build>/index.html` resume os cenários Newman e liga cada um ao seu HTML detalhado, quando gerado.
+
+As páginas-resumo são geradas junto com os artefatos da execução. Os índices `/reports/unit/` e `/reports/e2e/` listam os builds publicados em ordem decrescente, com links para os respectivos resumos; o índice unitário também liga diretamente à cobertura. Uma etapa não executada pode não ter relatório. O Jenkins também arquiva os relatórios no próprio build.
+
+O Compose mantém os dados com volumes nomeados: `postgres_data` persiste o banco, `jenkins_home` preserva configuração e histórico do Jenkins, e `reports_data` é compartilhado entre Jenkins (leitura/escrita) e o servidor Nginx (somente leitura). Os diretórios `/reports/unit/` e `/reports/e2e/` ficam disponíveis no índice mesmo antes da primeira execução; os builds publicados aparecem abaixo deles. Já os relatórios locais k6 usam bind mount para aparecerem diretamente em `test/performance/artifacts/`. `docker compose --profile performance down` preserva os volumes; `down -v` apaga também banco, Jenkins e relatórios publicados.
 
 ### Parando e removendo
 
 ```bash
-# Parar sem perder nada (volta com docker start redgreen-mailpit redgreen-jenkins)
-docker stop redgreen-jenkins redgreen-mailpit
+# Para os serviços e mantém volumes de banco e histórico do Jenkins
+docker compose --profile performance down
 
-# Remover containers e rede (o histórico do Jenkins fica no volume)
-docker rm -f redgreen-jenkins redgreen-mailpit
-docker network rm redgreen-jenkins
-
-# Recomeçar do zero: apaga o volume com todo o histórico de builds
-docker volume rm redgreen_jenkins_home
+# Apaga também os dados persistentes (irreversível)
+docker compose --profile performance down -v
 ```
 
-Ao mudar senha ou token no `.env`, remova os containers e rode o bloco de subida de novo: o JCasC reaplica a configuração a cada inicialização.
+Ao mudar variáveis no `.env`, recrie os serviços com `docker compose up -d --build --force-recreate`.
 
 ---
 
@@ -407,7 +383,7 @@ npm test -- --runInBand slot-session.service.spec.ts
 npm run test:tooling
 ```
 
-A cobertura instrumenta o código de `src/` e é gravada em `coverage/` (relatório HTML em `coverage/lcov-report/index.html`). Os testes de [compatibilidade Newman](test/tooling/newman-compat.test.cjs) verificam as adaptações aplicadas por [patch-newman.cjs](scripts/patch-newman.cjs), incluindo variáveis dinâmicas do Postman e idempotência do patch executado no `postinstall`.
+A cobertura instrumenta somente a camada de regras de negócio em `src/modules/**/application/` e é gravada em `reports/unit/coverage/`, incluindo HTML navegável em `reports/unit/coverage/lcov-report/index.html` e XML Cobertura para o Jenkins. Os testes de [compatibilidade Newman](test/tooling/newman-compat.test.cjs) verificam as adaptações aplicadas por [patch-newman.cjs](scripts/patch-newman.cjs), incluindo variáveis dinâmicas do Postman e idempotência do patch executado no `postinstall`.
 
 ### Cenários automatizados de API
 
@@ -420,11 +396,11 @@ A coleção [redgreen-api.postman_collection.json](test/api/redgreen-api.postman
 | `TC-003` | Administrador consegue executar funções restritas.                        | API real e conta administradora; preparação e limpeza da mesa por HTTP.                                |
 | `TC-004` | Bônus diário não pode ser resgatado duas vezes no mesmo dia.              | API real; duas tentativas de resgate do bônus diário pela mesma conta.                                 |
 | `TC-005` | Um jogador não pode usar a sessão de outro.                               | API real; dois jogadores e tentativa de acesso à sessão pertencente ao outro.                          |
-| `TC-006` | Administrador cria e configura uma mesa ativa.                            | API local e administrador do seed; cria uma mesa Slot e a remove ao final.                             |
-| `TC-007` | Ranking exibe os jogadores na ordem esperada de saldo.                    | API local; cria 12 jogadores com saldos distintos e verifica a ordem e o limite de 10 posições.        |
-| `TC-008` | Conclusão de Slot e entrada no Gambit com o saldo atualizado.             | API local, novo jogador e mesas Slot 1 e Gambit 1; confere saldo após giro, reroll e cash-outs.        |
-| `TC-009` | Bloqueio de duas sessões simultâneas de Slot para o mesmo usuário.        | API local, novo jogador e mesa Slot 1; tenta abrir outra sessão com uma partida ativa.                 |
-| `TC-010` | Sessão ativa em um jogo bloqueia a entrada no outro.                      | API local e mesas Slot 1 e Gambit 1; verifica o bloqueio de troca de jogo nos dois sentidos.           |
+| `TC-006` | Administrador cria e configura uma mesa ativa.                            | API local ou rede Compose e administrador do seed; cria uma mesa Slot e a remove ao final.             |
+| `TC-007` | Ranking exibe os jogadores na ordem esperada de saldo.                    | API local ou rede Compose; cria 12 jogadores com saldos distintos e verifica a ordem e o limite.       |
+| `TC-008` | Conclusão de Slot e entrada no Gambit com o saldo atualizado.             | API local ou rede Compose, novo jogador e mesas Slot 1 e Gambit 1; confere saldo e cash-outs.          |
+| `TC-009` | Bloqueio de duas sessões simultâneas de Slot para o mesmo usuário.        | API local ou rede Compose, novo jogador e mesa Slot 1; tenta abrir outra sessão com uma partida ativa. |
+| `TC-010` | Sessão ativa em um jogo bloqueia a entrada no outro.                      | API local ou rede Compose e mesas Slot 1 e Gambit 1; verifica o bloqueio nos dois sentidos.            |
 | `TC-011` | Bônus completa o saldo mínimo e libera a sessão de Slot.                  | API real; compara o saldo e a elegibilidade para iniciar a sessão antes e depois do bônus.             |
 | `TC-012` | Exclusão de mesa somente após o cash-out administrativo.                  | API real e operações administrativas; verifica a exclusão da mesa após encerrar as sessões.            |
 | `TC-013` | Reroll cobra o valor da mesa e é recusado sem saldo ou tentativas.        | API real; verifica o débito do reroll e as rejeições por saldo ou tentativas esgotadas.                |
@@ -462,7 +438,7 @@ npm run test:api
 npm run test:api:tc024
 ```
 
-`test:all` descobre todos os scripts `test:api:*` em `package.json` e os executa sequencialmente. Não inclui Jest nem testes de ferramentas. TC-003 e TC-005 fazem preparação e limpeza por HTTP, sem acesso direto ao PostgreSQL. TC-006 a TC-010 exigem uma URL local; alguns desses runners atualizam o arquivo de ambiente Postman, portanto execute a suite em sequência.
+`test:all` descobre todos os scripts `test:api:*` em `package.json` e os executa sequencialmente. Não inclui Jest nem testes de ferramentas. TC-003 e TC-005 fazem preparação e limpeza por HTTP, sem acesso direto ao PostgreSQL. TC-006 a TC-010 exigem uma URL local ou o nome `api` na rede Compose; alguns runners atualizam o arquivo de ambiente Postman, portanto execute a suite em sequência. O pipeline define `API_BASE_URL=http://api:3000` para executar os casos contra a API isolada do build.
 
 #### Seed e ambiente Postman
 
