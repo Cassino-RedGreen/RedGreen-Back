@@ -80,10 +80,8 @@ services:
     restart: unless-stopped
 
   jenkins:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.jenkins
-    image: redgreen-jenkins:local
+    image: ${JENKINS_IMAGE:-antoniofsn2/redgreen-jenkins:latest}
+    pull_policy: always
     restart: unless-stopped
     env_file:
       - .env
@@ -98,6 +96,7 @@ services:
     environment:
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:?Set JENKINS_ADMIN_USER in .env before starting Jenkins}
       JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?Set JENKINS_ADMIN_PASSWORD in .env before starting Jenkins}
+      JENKINS_IMAGE_REPO: ${JENKINS_IMAGE_REPO:-antoniofsn2/redgreen-jenkins}
       REPORTS_VOLUME_PATH: /var/jenkins_reports
       REPORT_SERVER_URL: ${REPORT_SERVER_URL:-http://localhost:8088}
     healthcheck:

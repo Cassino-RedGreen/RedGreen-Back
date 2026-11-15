@@ -10,7 +10,7 @@ pipeline {
     booleanParam(
       name: 'PUBLISH_IMAGE',
       defaultValue: false,
-      description: 'Publica a imagem da API no Docker Hub a partir desta branch (na main a publicação é automática).'
+      description: 'Publica a imagem do Jenkins no Docker Hub a partir desta branch (na main a publicação é automática).'
     )
   }
 
@@ -271,7 +271,46 @@ pipeline {
       }
     }
 
-    stage('Publish to Docker Hub') {
+    stage('Build & Publish Jenkins Image') {
+      when {
+        anyOf {
+          branch 'main'
+          expression { params.PUBLISH_IMAGE }
+        }
+      }
+      steps {
+        script {
+          if (!env.JENKINS_IMAGE_REPO?.trim()) {
+            error('JENKINS_IMAGE_REPO must be configured in the Jenkins environment.')
+          }
+        }
+        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+          sh '''
+            set -eu
+            : "${JENKINS_IMAGE_REPO:?Set JENKINS_IMAGE_REPO in the Jenkins .env (e.g. antoniofsn2/redgreen-jenkins)}"
+            docker build -f docker/Dockerfile.jenkins -t "$JENKINS_IMAGE_REPO:$IMAGE_TAG" .
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
+            trap 'docker logout >/dev/null 2>&1 || true' EXIT
+            docker push "$JENKINS_IMAGE_REPO:$IMAGE_TAG"
+            if [ "${BRANCH_NAME:-}" = "main" ]; then
+              docker tag "$JENKINS_IMAGE_REPO:$IMAGE_TAG" "$JENKINS_IMAGE_REPO:latest"
+              docker push "$JENKINS_IMAGE_REPO:latest"
+            fi
+          '''
+        }
+        script {
+          def suffix = env.BRANCH_NAME == 'main' ? ' (and latest)' : ''
+          env.PUBLISHED_IMAGE = "${env.JENKINS_IMAGE_REPO}:${env.IMAGE_TAG}${suffix}"
+        }
+      }
+      post {
+        failure {
+          markFailedStage()
+        }
+      }
+    }
+
+    stage('Verify Jenkins Image from Docker Hub') {
       when {
         anyOf {
           branch 'main'
@@ -281,20 +320,31 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
           sh '''
-            : "${DOCKERHUB_REPO:?Set DOCKERHUB_REPO in the Jenkins .env (e.g. user/redgreen-back)}"
+            set -eu
+            SMOKE_CONTAINER="$CI_PREFIX-jenkins-image-smoke"
+            SMOKE_ADMIN_PASSWORD="smoke-${CI_PREFIX}-jenkins-image-validation"
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
-            trap 'docker logout >/dev/null 2>&1 || true' EXIT
-            docker tag "$API_IMAGE:$IMAGE_TAG" "$DOCKERHUB_REPO:$IMAGE_TAG"
-            docker push "$DOCKERHUB_REPO:$IMAGE_TAG"
-            if [ "${BRANCH_NAME:-}" = "main" ]; then
-              docker tag "$API_IMAGE:$IMAGE_TAG" "$DOCKERHUB_REPO:latest"
-              docker push "$DOCKERHUB_REPO:latest"
-            fi
+            trap 'docker rm -f "$SMOKE_CONTAINER" >/dev/null 2>&1 || true; docker logout >/dev/null 2>&1 || true' EXIT
+            docker pull "$JENKINS_IMAGE_REPO:$IMAGE_TAG"
+            docker run -d --name "$SMOKE_CONTAINER" --network none \
+              -e JENKINS_ADMIN_USER=jenkins-smoke \
+              -e "JENKINS_ADMIN_PASSWORD=$SMOKE_ADMIN_PASSWORD" \
+              -e JENKINS_PUBLIC_URL=http://localhost:8080/ \
+              -e "POSTGRES_PASSWORD=smoke-${CI_PREFIX}-postgres" \
+              -e "JWT_SECRET=smoke-${CI_PREFIX}-jwt-secret" \
+              -e SMTP_PASSWORD= \
+              "$JENKINS_IMAGE_REPO:$IMAGE_TAG"
+            for attempt in $(seq 1 60); do
+              if docker exec "$SMOKE_CONTAINER" curl -fsS http://127.0.0.1:8080/login >/dev/null; then
+                echo "Docker Hub Jenkins image is healthy: $JENKINS_IMAGE_REPO:$IMAGE_TAG"
+                exit 0
+              fi
+              sleep 5
+            done
+            docker logs --tail 200 "$SMOKE_CONTAINER" || true
+            echo "Docker Hub Jenkins image did not become healthy." >&2
+            exit 1
           '''
-        }
-        script {
-          def suffix = env.BRANCH_NAME == 'main' ? ' (and latest)' : ''
-          env.PUBLISHED_IMAGE = "${env.DOCKERHUB_REPO}:${env.IMAGE_TAG}${suffix}"
         }
       }
       post {
@@ -314,15 +364,9 @@ pipeline {
               docker network disconnect "$CI_NETWORK" "$runner" >/dev/null 2>&1 || true
             fi
           done
-          docker rm -f "$CI_PREFIX-dist" "$CI_PREFIX-api" "$CI_PREFIX-pg" >/dev/null 2>&1 || true
+          docker rm -f "$CI_PREFIX-dist" "$CI_PREFIX-api" "$CI_PREFIX-pg" "$CI_PREFIX-jenkins-image-smoke" >/dev/null 2>&1 || true
           docker network rm "$CI_NETWORK" >/dev/null 2>&1 || true
           docker image rm "$API_IMAGE:$IMAGE_TAG" >/dev/null 2>&1 || true
-          if [ -n "${DOCKERHUB_REPO:-}" ]; then
-            docker image rm "$DOCKERHUB_REPO:$IMAGE_TAG" >/dev/null 2>&1 || true
-            if [ "${BRANCH_NAME:-}" = "main" ]; then
-              docker image rm "$DOCKERHUB_REPO:latest" >/dev/null 2>&1 || true
-            fi
-          fi
         fi
       '''
       withCredentials([string(credentialsId: 'smtp-password', variable: 'SMTP_PASSWORD')]) {
@@ -333,7 +377,7 @@ pipeline {
           ]) {
             def status = sh(returnStatus: true, script: 'python3 scripts/send-pipeline-email.py')
             if (status != 0) {
-              echo "Warning: notification email was not sent (exit code ${status}). The build result was not changed."
+              error("Required pipeline notification email failed (exit code ${status}).")
             }
           }
         }
