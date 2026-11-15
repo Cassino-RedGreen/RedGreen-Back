@@ -198,6 +198,16 @@ npm run compose:performance
 
 Esse comando inicia PostgreSQL e API quando necessário, aguarda a API ficar saudável e executa os três cenários. Retorna o código da suíte (incluindo falhas de thresholds); os relatórios ficam em `test/performance/artifacts/`. O diretório local é montado como bind mount para permitir acesso direto aos arquivos.
 
+### Imagem no Docker Hub
+
+A imagem da API, gerada pelo pipeline Jenkins a partir de [`docker/Dockerfile.api`](docker/Dockerfile.api), está publicada em **[hub.docker.com/r/antoniofsn2/redgreen-back](https://hub.docker.com/r/antoniofsn2/redgreen-back)**.
+
+```bash
+docker pull antoniofsn2/redgreen-back:latest
+```
+
+Builds da `main` publicam as tags `<build>-<commit>` e `latest`. Em outras branches, a publicação só acontece com o parâmetro `PUBLISH_IMAGE` marcado e envia apenas a tag `<build>-<commit>`.
+
 ---
 
 ## Estrutura do Projeto
