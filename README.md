@@ -321,7 +321,7 @@ docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml up -d --bui
 
 Configure no `.env` o usuário/token Docker Hub, `JENKINS_IMAGE_REPO`, as credenciais administrativas e os segredos obrigatórios. A pipeline reutiliza `antoniofsn2/redgreen-back` sem substituir tags da API: na `main`, publica `jenkins-<build>-<commit>` e `jenkins-latest`; em outra branch, habilite `PUBLISH_IMAGE` para publicar apenas a tag imutável.
 
-Após a publicação, configure `JENKINS_IMAGE` com a tag publicada (ou `latest` após uma execução da `main`) e inicie Jenkins pelo Compose normal:
+Após a publicação, configure `JENKINS_IMAGE` com a tag publicada (ou `jenkins-latest` após uma execução da `main`) e inicie Jenkins pelo Compose normal:
 
 ```bash
 docker compose pull jenkins

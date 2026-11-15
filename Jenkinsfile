@@ -399,6 +399,12 @@ def prepareRunner(String service, boolean installDependencies = false) {
     returnStdout: true,
     script: "docker ps -q --filter label=com.docker.compose.project=redgreen-back --filter label=com.docker.compose.service='${service}'"
   ).trim()
+  if (!output) {
+    output = sh(
+      returnStdout: true,
+      script: "docker ps -q --filter label=com.docker.compose.project=redgreen --filter label=com.docker.compose.service='${service}' --filter ancestor='redgreen-${service}:local'"
+    ).trim()
+  }
   def runners = output ? output.split('\n') : []
   if (runners.length != 1) {
     def command = service == 'performance'
