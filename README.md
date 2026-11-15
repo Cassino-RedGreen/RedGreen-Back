@@ -198,15 +198,17 @@ npm run compose:performance
 
 Esse comando inicia PostgreSQL e API quando necessário, aguarda a API ficar saudável e executa os três cenários. Retorna o código da suíte (incluindo falhas de thresholds); os relatórios ficam em `test/performance/artifacts/`. O diretório local é montado como bind mount para permitir acesso direto aos arquivos.
 
-### Imagem no Docker Hub
+### Imagem Jenkins no Docker Hub
 
-A imagem da API, gerada pelo pipeline Jenkins a partir de [`docker/Dockerfile.api`](docker/Dockerfile.api), está publicada em **[hub.docker.com/r/antoniofsn2/redgreen-back](https://hub.docker.com/r/antoniofsn2/redgreen-back)**.
+A imagem exigida pelo projeto é a do Jenkins, construída de [`docker/Dockerfile.jenkins`](docker/Dockerfile.jenkins). O repositório de destino é **[hub.docker.com/r/antoniofsn2/redgreen-jenkins](https://hub.docker.com/r/antoniofsn2/redgreen-jenkins)**; a imagem ficará disponível após a primeira publicação da pipeline. O link do repositório GitHub é **[Cassino-RedGreen/RedGreen-Back](https://github.com/Cassino-RedGreen/RedGreen-Back)**. A imagem anterior `antoniofsn2/redgreen-back` foi usada apenas para validar a publicação da API e não substitui a imagem Jenkins requerida.
+
+Depois que a primeira execução da pipeline publicar a imagem:
 
 ```bash
-docker pull antoniofsn2/redgreen-back:latest
+docker pull antoniofsn2/redgreen-jenkins:latest
 ```
 
-Builds da `main` publicam as tags `<build>-<commit>` e `latest`. Em outras branches, a publicação só acontece com o parâmetro `PUBLISH_IMAGE` marcado e envia apenas a tag `<build>-<commit>`.
+Builds da `main` publicam as tags `<build>-<commit>` e `latest`. Em outras branches, marque `PUBLISH_IMAGE` para publicar a tag imutável `<build>-<commit>`. A etapa seguinte executa `docker pull` dessa tag e inicia um Jenkins descartável a partir da imagem remota para verificar que o serviço sobe e responde.
 
 ---
 
@@ -281,17 +283,21 @@ Pipeline local em container, configurado só por código: imagem em [`docker/Doc
 
 Copie [`.env.example`](.env.example) para `.env`, preencha os campos de Jenkins e defina um `JWT_SECRET` forte. Para notificação por e-mail, o padrão usa o Mailpit local.
 
-| Variável                                                                                           | Obrigatória | Descrição                                                                                                     |
-| -------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
-| `JENKINS_ADMIN_USER`                                                                               | sim         | Usuário admin provisionado por código (JCasC e init hook). O Compose recusa iniciar Jenkins se estiver vazio. |
-| `JENKINS_ADMIN_PASSWORD`                                                                           | sim         | Senha forte do admin (16+ caracteres). O Compose recusa iniciar Jenkins se estiver vazia.                     |
-| `POSTGRES_PASSWORD`                                                                                | sim         | Senha do PostgreSQL da stack de testes E2E.                                                                   |
-| `JWT_SECRET`                                                                                       | sim         | Segredo da API na stack de testes E2E.                                                                        |
-| `DOCKER_SOCKET_GID`                                                                                | sim         | Grupo do socket do Docker: `0` no Docker Desktop; no Linux, `stat -c %g /var/run/docker.sock`.                |
-| `JENKINS_PORT`, `JENKINS_PUBLIC_URL`, `MAILPIT_UI_PORT`, `REPORT_SERVER_PORT`, `REPORT_SERVER_URL` | não         | Portas e URL pública dos serviços (padrão `8080`, `8025` e `8088`).                                           |
-| `EMAIL_TO`, `EMAIL_FROM`, `SMTP_*`                                                                 | não         | Destino e servidor do e-mail de resultado. O padrão envia para o Mailpit.                                     |
+| Variável                                                                                           | Obrigatória         | Descrição                                                                                                     |
+| -------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `JENKINS_ADMIN_USER`                                                                               | sim                 | Usuário admin provisionado por código (JCasC e init hook). O Compose recusa iniciar Jenkins se estiver vazio. |
+| `JENKINS_ADMIN_PASSWORD`                                                                           | sim                 | Senha forte do admin (16+ caracteres). O Compose recusa iniciar Jenkins se estiver vazia.                     |
+| `POSTGRES_PASSWORD`                                                                                | sim                 | Senha do PostgreSQL da stack de testes E2E.                                                                   |
+| `JWT_SECRET`                                                                                       | sim                 | Segredo da API na stack de testes E2E.                                                                        |
+| `DOCKER_SOCKET_GID`                                                                                | sim                 | Grupo do socket do Docker: `0` no Docker Desktop; no Linux, `stat -c %g /var/run/docker.sock`.                |
+| `JENKINS_PORT`, `JENKINS_PUBLIC_URL`, `MAILPIT_UI_PORT`, `REPORT_SERVER_PORT`, `REPORT_SERVER_URL` | não                 | Portas e URL pública dos serviços (padrão `8080`, `8025` e `8088`).                                           |
+| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`                                                            | sim para publicação | Credenciais Jenkins do tipo access token; o token nunca deve ser colocado no Jenkinsfile.                     |
+| `JENKINS_IMAGE_REPO`                                                                               | sim para publicação | Repositório Docker Hub da imagem Jenkins, por padrão `antoniofsn2/redgreen-jenkins`.                          |
+| `JENKINS_IMAGE`                                                                                    | não                 | Imagem/tag que o Compose deve puxar para iniciar Jenkins; por padrão `antoniofsn2/redgreen-jenkins:latest`.   |
+| `EMAIL_TO`, `EMAIL_FROM`, `SMTP_*`                                                                 | sim                 | Destino e servidor do e-mail de resultado. O padrão de desenvolvimento envia para o Mailpit.                  |
 
 > **Nunca commite o `.env`.** Ele já está no `.gitignore` e guarda senhas e tokens.
+> Para entrega fora do ambiente local, substitua `EMAIL_TO` pelos destinatários reais e configure o SMTP; a configuração padrão encaminha as mensagens ao Mailpit local.
 
 ### Subindo a stack completa
 
@@ -301,7 +307,26 @@ Na raiz do repositório:
 docker compose up -d --build
 ```
 
-O comando padrão sobe sete serviços de longa execução: PostgreSQL, API, Jenkins, Mailpit, servidor de relatórios e runners unitário e E2E. Um serviço one-shot cria os diretórios dos relatórios e ajusta as permissões do volume compartilhado antes de iniciar Jenkins e Nginx. O runner de performance é um serviço opcional, ativado com `docker compose --profile performance up -d --build performance`; subir o runner não executa k6. Para acompanhar a inicialização, use `docker compose logs -f jenkins`.
+O Compose constrói localmente a API, o banco e os runners; Jenkins é puxado do Docker Hub usando `JENKINS_IMAGE`. O comando padrão sobe sete serviços de longa execução: PostgreSQL, API, Jenkins, Mailpit, servidor de relatórios e runners unitário e E2E. Um serviço one-shot cria os diretórios dos relatórios e ajusta as permissões do volume compartilhado antes de iniciar Jenkins e Nginx. O runner de performance é um serviço opcional, ativado com `docker compose --profile performance up -d --build performance`; subir o runner não executa k6. Para acompanhar a inicialização, use `docker compose logs -f jenkins`.
+
+### Bootstrap inicial do Jenkins
+
+O serviço normal sempre puxa Jenkins do Docker Hub. Como a imagem ainda precisa ser publicada para que Jenkins possa ser iniciado desse repositório, use o override de bootstrap uma única vez. Ele constrói a imagem inicial do Jenkins localmente; os demais serviços locais continuam usando seus Dockerfiles:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml up -d --build
+```
+
+Antes disso, crie o repositório Docker Hub `antoniofsn2/redgreen-jenkins` e configure no `.env` o usuário/token Docker Hub, `JENKINS_IMAGE_REPO`, as credenciais administrativas e os segredos obrigatórios. Na execução inicial, o Jenkins local roda a pipeline; na `main`, ela publica `<build>-<commit>` e `latest`. Em outra branch, habilite `PUBLISH_IMAGE` no build para publicar a tag imutável.
+
+Após a publicação, configure `JENKINS_IMAGE` com a tag publicada (ou `latest` após uma execução da `main`) e inicie Jenkins pelo Compose normal:
+
+```bash
+docker compose pull jenkins
+docker compose up -d --force-recreate jenkins
+```
+
+A partir daí, a própria pipeline já está sendo executada pelo container vindo do Docker Hub. A etapa `Verify Jenkins Image from Docker Hub` também faz pull da tag recém-publicada e verifica o endpoint `/login` em um container descartável. Esse bootstrap local é necessário apenas para quebrar a dependência circular da primeira publicação.
 
 ### Acesso
 
@@ -317,16 +342,18 @@ O job `RedGreen-Back` é multibranch e lê o repositório do GitHub (não a cóp
 
 ### Etapas do pipeline
 
-| Etapa                | O que faz                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| Prepare              | Define nomes únicos por build e a tag da imagem (`<build>-<commit>`).                       |
-| Install Dependencies | `npm ci`.                                                                                   |
-| Quality              | Lint, formatação e `npm audit --audit-level=high`, em paralelo.                             |
-| Unit Tests           | Copia o checkout para o runner Compose e executa Jest com cobertura; falha abaixo de 90%.   |
-| Build & Package      | Builda a imagem local da API (`docker/Dockerfile.api`) e gera `redgreen-back-<tag>.tar.gz`. |
-| E2E Tests            | Sobe PostgreSQL e API isolados e executa Newman no runner Compose contra a imagem da API.   |
-| Performance Tests    | Opcional pelo parâmetro `RUN_PERFORMANCE`; executa a suíte k6 no runner Compose.            |
-| Pós-build            | Sempre: remove containers/rede de teste, arquiva relatórios e envia e-mail de resultado.    |
+| Etapa                         | O que faz                                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| Prepare                       | Define nomes únicos por build e a tag (`<build>-<commit>`).                               |
+| Install Dependencies          | `npm ci`.                                                                                 |
+| Quality                       | Lint, formatação e `npm audit --audit-level=high`, em paralelo.                           |
+| Unit Tests                    | Copia o checkout para o runner Compose e executa Jest com cobertura; falha abaixo de 90%. |
+| Build & Package               | Constrói a API local para os testes e gera o artefato `redgreen-back-<tag>.tar.gz`.       |
+| E2E Tests                     | Sobe PostgreSQL e API isolados e executa Newman no runner Compose contra a imagem da API. |
+| Performance Tests             | Opcional pelo parâmetro `RUN_PERFORMANCE`; executa a suíte k6 no runner Compose.          |
+| Build & Publish Jenkins Image | Na `main` automaticamente; em outras branches quando `PUBLISH_IMAGE` está ativo.          |
+| Verify Jenkins Image from Hub | Faz pull explícito da tag remota recém-publicada e verifica a inicialização do Jenkins.   |
+| Pós-build                     | Sempre: remove containers/rede de teste, arquiva relatórios e envia e-mail de resultado.  |
 
 Relatórios verificados ao fim das etapas de teste:
 
