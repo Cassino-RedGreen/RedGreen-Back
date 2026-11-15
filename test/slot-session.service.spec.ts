@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SlotSessionService } from '../src/modules/slot-machine/sessions/application/slot-session.service';
 import {
   SlotSession,
@@ -14,6 +14,7 @@ import { SlotMachineService } from '../src/modules/slot-machine/application/slot
 import { SlotMachine } from '../src/modules/slot-machine/domain/slot-machine.entity';
 import { SlotMachineColor } from '../src/modules/slot-machine/domain/enums/slot-machine-color.enum';
 import { CreateSlotSessionDto } from '../src/modules/slot-machine/sessions/domain/dto/create-slot-session.dto';
+import { UpdateSlotSessionDto } from '../src/modules/slot-machine/sessions/domain/dto/update-slot-session.dto';
 import { SessionRegistryService } from '../src/modules/sessions/application/session-registry.service';
 import { User } from '../src/modules/auth/domain/user.entity';
 import { ActiveSession } from '../src/modules/sessions/domain/active-session.entity';
@@ -164,6 +165,130 @@ describe('SlotSessionService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('repository methods', () => {
+    const Session = {
+      SlotSessionId: 1,
+      SlotMachineId: 2,
+      UserId: 'user1',
+      Status: SlotSessionStatus.InProgress,
+      DeletedAt: null,
+    } as SlotSession;
+
+    it("should list a user's sessions for the requested machine", async () => {
+      MockSlotSessionRepo.find.mockResolvedValue([Session]);
+
+      await expect(Service.findAll(2, 'user1')).resolves.toEqual([Session]);
+      const Criteria = MockSlotSessionRepo.find.mock.calls[0]?.[0];
+      expect(Criteria).toHaveProperty('where.SlotMachineId', 2);
+      expect(Criteria).toHaveProperty('where.UserId', 'user1');
+      expect(Criteria).toHaveProperty('where.DeletedAt');
+    });
+
+    it('should find a session belonging to the requested machine and user', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(Session);
+
+      await expect(Service.findOne(2, 1, 'user1')).resolves.toBe(Session);
+      const Criteria = MockSlotSessionRepo.findOne.mock.calls[0]?.[0];
+      expect(Criteria).toHaveProperty('where.SlotSessionId', 1);
+      expect(Criteria).toHaveProperty('where.SlotMachineId', 2);
+      expect(Criteria).toHaveProperty('where.UserId', 'user1');
+      expect(Criteria).toHaveProperty('where.DeletedAt');
+    });
+
+    it('should reject a session outside the machine/user scope', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(null);
+
+      await expect(Service.findOne(2, 1, 'other-user')).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it('should update the found session fields', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(Session);
+      MockSlotSessionRepo.save.mockImplementation((Saved) =>
+        Promise.resolve(Saved)
+      );
+      const Dto: UpdateSlotSessionDto = {
+        LastInteractionAt: new Date('2026-04-10T12:00:00Z'),
+      };
+
+      await expect(Service.update(2, 1, Dto, 'user1')).resolves.toMatchObject(
+        Dto
+      );
+      expect(MockSlotSessionRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining(Dto)
+      );
+    });
+
+    it('should return the active session or null', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(Session);
+      await expect(Service.findActiveSession('user1')).resolves.toBe(Session);
+
+      MockSlotSessionRepo.findOne.mockResolvedValue(null);
+      await expect(Service.findActiveSession('user1')).resolves.toBeNull();
+    });
+
+    it('should delegate rerollActive to the active session', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(Session);
+      const Result = { session: Session, currentBalance: 90 };
+      const Reroll = jest.spyOn(Service, 'reroll').mockResolvedValue(Result);
+
+      await expect(Service.rerollActive('user1', 2)).resolves.toBe(Result);
+      expect(Reroll).toHaveBeenCalledWith(2, 1, 2, 'user1');
+    });
+
+    it('should reject rerollActive when there is no active session', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(null);
+
+      await expect(Service.rerollActive('user1', 0)).rejects.toThrow(
+        'No active session found'
+      );
+    });
+
+    it('should delegate cashOutActive to the active session', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(Session);
+      const Result = { message: 'Cash out successful', finalBalance: 150 };
+      const CashOut = jest.spyOn(Service, 'cashOut').mockResolvedValue(Result);
+
+      await expect(Service.cashOutActive('user1')).resolves.toBe(Result);
+      expect(CashOut).toHaveBeenCalledWith(2, 1, 'user1');
+    });
+
+    it('should report an already cashed out session when no active session remains', async () => {
+      MockSlotSessionRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...Session,
+          Status: SlotSessionStatus.CashedOut,
+        });
+
+      await expect(Service.cashOutActive('user1')).rejects.toThrow(
+        BadRequestException
+      );
+    });
+
+    it('should reject cashOutActive when the user has no session', async () => {
+      MockSlotSessionRepo.findOne.mockResolvedValue(null);
+
+      await expect(Service.cashOutActive('user1')).rejects.toThrow(
+        NotFoundException
+      );
+    });
+
+    it('should soft-delete a found session', async () => {
+      const ExistingSession = { ...Session, DeletedAt: null };
+      MockSlotSessionRepo.findOne.mockResolvedValue(ExistingSession);
+      MockSlotSessionRepo.save.mockImplementation((Saved) =>
+        Promise.resolve(Saved)
+      );
+
+      await Service.remove(2, 1, 'user1');
+
+      expect(ExistingSession.DeletedAt).toBeInstanceOf(Date);
+      expect(MockSlotSessionRepo.save).toHaveBeenCalledWith(ExistingSession);
+    });
   });
 
   describe('calculateReward', () => {
@@ -492,12 +617,17 @@ describe('SlotSessionService', () => {
 
     function setupCreateMocks(
       userChips = 100,
-      existingActive: ActiveSession | null = null
+      existingActive: ActiveSession | null = null,
+      machine: SlotMachine | null = MockSlotMachine,
+      userExists = true
     ) {
       MockManagerForCashOut.findOne.mockImplementation((entity: unknown) => {
-        if (entity === SlotMachine) return Promise.resolve(MockSlotMachine);
+        if (entity === SlotMachine) return Promise.resolve(machine);
         if (entity === ActiveSession) return Promise.resolve(existingActive);
-        if (entity === User) return Promise.resolve({ ChipBalance: userChips });
+        if (entity === User)
+          return Promise.resolve(
+            userExists ? { ChipBalance: userChips } : null
+          );
         return Promise.resolve(null);
       });
       MockManagerForCashOut.decrement.mockResolvedValue(undefined);
@@ -554,6 +684,66 @@ describe('SlotSessionService', () => {
       );
       expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
     });
+
+    it('should rollback when the slot machine does not exist', async () => {
+      setupCreateMocks(100, null, null);
+
+      await expect(
+        Service.create(1, new CreateSlotSessionDto(), 'user1')
+      ).rejects.toThrow(NotFoundException);
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+      expect(MockQueryRunner.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject an inactive slot machine', async () => {
+      setupCreateMocks(100, null, { ...MockSlotMachine, Active: false });
+
+      await expect(
+        Service.create(1, new CreateSlotSessionDto(), 'user1')
+      ).rejects.toThrow('This slot machine is not active');
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject when the user does not exist', async () => {
+      setupCreateMocks(100, null, MockSlotMachine, false);
+
+      await expect(
+        Service.create(1, new CreateSlotSessionDto(), 'missing-user')
+      ).rejects.toThrow('User not found');
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not charge a buy-in when the machine has no minimum spin value', async () => {
+      setupCreateMocks(100, null, {
+        ...MockSlotMachine,
+        MinimumSpinValue: 0,
+      });
+
+      await Service.create(1, new CreateSlotSessionDto(), 'user1');
+
+      expect(MockManagerForCashOut.decrement).not.toHaveBeenCalled();
+      expect(MockQueryRunner.commitTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retain explicitly supplied session timestamps', async () => {
+      setupCreateMocks();
+      const Dto = Object.assign(new CreateSlotSessionDto(), {
+        StartedAt: new Date('2026-04-10T10:00:00Z'),
+        LastInteractionAt: new Date('2026-04-10T10:05:00Z'),
+        EndedAt: new Date('2026-04-10T10:10:00Z'),
+      });
+
+      await Service.create(1, Dto, 'user1');
+
+      expect(MockManagerForCashOut.create).toHaveBeenCalledWith(
+        SlotSession,
+        expect.objectContaining({
+          StartedAt: Dto.StartedAt,
+          LastInteractionAt: Dto.LastInteractionAt,
+          EndedAt: Dto.EndedAt,
+        })
+      );
+    });
   });
 
   describe('reroll', () => {
@@ -591,12 +781,17 @@ describe('SlotSessionService', () => {
 
     function setupRerollMocks(
       session: SlotSession | null = MockSessionForReroll,
-      userChips = 100
+      userChips = 100,
+      machine: SlotMachine | null = MockSlotMachine,
+      userExists = true
     ) {
       MockManagerForCashOut.findOne.mockImplementation((entity: unknown) => {
         if (entity === SlotSession) return Promise.resolve(session);
-        if (entity === SlotMachine) return Promise.resolve(MockSlotMachine);
-        if (entity === User) return Promise.resolve({ ChipBalance: userChips });
+        if (entity === SlotMachine) return Promise.resolve(machine);
+        if (entity === User)
+          return Promise.resolve(
+            userExists ? { ChipBalance: userChips } : null
+          );
         return Promise.resolve(null);
       });
       MockManagerForCashOut.decrement.mockResolvedValue(undefined);
@@ -655,6 +850,67 @@ describe('SlotSessionService', () => {
         'Insufficient chips to reroll'
       );
       expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject when the session does not exist', async () => {
+      setupRerollMocks(null);
+
+      await expect(Service.reroll(1, 1, 0, 'user1')).rejects.toThrow(
+        NotFoundException
+      );
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject when the slot machine does not exist', async () => {
+      setupRerollMocks(MockSessionForReroll, 100, null);
+
+      await expect(Service.reroll(1, 1, 0, 'user1')).rejects.toThrow(
+        NotFoundException
+      );
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject when the slot machine is inactive', async () => {
+      setupRerollMocks(MockSessionForReroll, 100, {
+        ...MockSlotMachine,
+        Active: false,
+      });
+
+      await expect(Service.reroll(1, 1, 0, 'user1')).rejects.toThrow(
+        'This slot machine is no longer active'
+      );
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([-1, 4])('should reject invalid reel index %i', async (Index) => {
+      setupRerollMocks();
+
+      await expect(Service.reroll(1, 1, Index, 'user1')).rejects.toThrow(
+        'Invalid reel index'
+      );
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject when the user does not exist', async () => {
+      setupRerollMocks(MockSessionForReroll, 100, MockSlotMachine, false);
+
+      await expect(Service.reroll(1, 1, 0, 'missing-user')).rejects.toThrow(
+        'User not found'
+      );
+      expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not charge a reroll when the machine has no reroll fee', async () => {
+      setupRerollMocks(MockSessionForReroll, 100, {
+        ...MockSlotMachine,
+        MinimumRerollValue: 0,
+      });
+      jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      await Service.reroll(1, 1, 0, 'user1');
+
+      expect(MockManagerForCashOut.decrement).not.toHaveBeenCalled();
+      expect(MockQueryRunner.commitTransaction).toHaveBeenCalledTimes(1);
     });
   });
 

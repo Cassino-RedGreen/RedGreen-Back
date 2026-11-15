@@ -26,6 +26,39 @@ type GambitSessionRepoMock = {
   findOne: jest.MockedFunction<
     (criteria: object) => Promise<GambitSession | null>
   >;
+  find: jest.MockedFunction<(criteria: object) => Promise<GambitSession[]>>;
+};
+
+type TransactionManagerMock = {
+  findOne: jest.Mock;
+  find: jest.Mock;
+  save: jest.Mock;
+  increment: jest.Mock;
+};
+
+const MockManager: TransactionManagerMock = {
+  findOne: jest.fn(),
+  find: jest.fn(),
+  save: jest.fn(),
+  increment: jest.fn(),
+};
+
+const MockQueryRunner = {
+  connect: jest.fn(),
+  startTransaction: jest.fn(),
+  commitTransaction: jest.fn(),
+  rollbackTransaction: jest.fn(),
+  release: jest.fn(),
+  manager: MockManager,
+};
+
+const MockDataSource = {
+  createQueryRunner: jest.fn().mockReturnValue(MockQueryRunner),
+};
+
+const MockSessionRegistry = {
+  acquire: jest.fn(),
+  release: jest.fn(),
 };
 
 const MockTable: GambitTable = {
@@ -61,6 +94,7 @@ describe('GambitTableService', () => {
 
   const MockSessionRepo: GambitSessionRepoMock = {
     findOne: jest.fn(),
+    find: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -77,11 +111,11 @@ describe('GambitTableService', () => {
         },
         {
           provide: DataSource,
-          useValue: { createQueryRunner: jest.fn() },
+          useValue: MockDataSource,
         },
         {
           provide: SessionRegistryService,
-          useValue: { acquire: jest.fn(), release: jest.fn() },
+          useValue: MockSessionRegistry,
         },
       ],
     }).compile();
@@ -142,6 +176,26 @@ describe('GambitTableService', () => {
   });
 
   describe('Update', () => {
+    it('should apply every provided configuration field', async () => {
+      const Dto: UpdateGambitTableDto = {
+        Name: 'Updated Table',
+        Description: 'Updated description',
+        MinimumChipsRequired: 250,
+        CardPrice: 25,
+        TableMultiplier: 2,
+        MinimumCardsPurchased: 6,
+        MaxCardsPurchased: 30,
+      };
+      const Table = { ...MockTable };
+      tableRepo.findOneBy.mockResolvedValue(Table);
+      tableRepo.save.mockImplementation((Saved) => Promise.resolve(Saved));
+
+      const Result = await service.Update(1, Dto);
+
+      expect(Result).toMatchObject(Dto);
+      expect(tableRepo.save).toHaveBeenCalledWith(expect.objectContaining(Dto));
+    });
+
     it('should update only the provided fields', async () => {
       const Dto: UpdateGambitTableDto = { Name: 'Updated Name', CardPrice: 20 };
       const UpdatedTable = {
@@ -240,6 +294,122 @@ describe('GambitTableService', () => {
       tableRepo.findOneBy.mockResolvedValue(null);
 
       await expect(service.Deactivate(99)).rejects.toThrow(NotFoundException);
+    });
+
+    describe('FindActiveSessions', () => {
+      it('should use the result when set and otherwise calculate potential payout', async () => {
+        const Sessions = [
+          {
+            UserId: 'user-1',
+            User: { Nickname: 'Player One' },
+            Status: GambitSessionStatus.InProgress,
+            Result: 120,
+            CardsPurchased: 5,
+            GambitTable: { CardPrice: 10 },
+          },
+          {
+            UserId: 'user-2',
+            User: { Nickname: 'Player Two' },
+            Status: GambitSessionStatus.InProgress,
+            Result: null,
+            CardsPurchased: 8,
+            GambitTable: { CardPrice: 10 },
+          },
+        ] as GambitSession[];
+        tableRepo.findOneBy.mockResolvedValue(MockTable);
+        sessionRepo.find.mockResolvedValue(Sessions);
+
+        await expect(service.FindActiveSessions(1)).resolves.toEqual([
+          {
+            UserId: 'user-1',
+            Nickname: 'Player One',
+            Status: GambitSessionStatus.InProgress,
+            PotentialPayout: 120,
+          },
+          {
+            UserId: 'user-2',
+            Nickname: 'Player Two',
+            Status: GambitSessionStatus.InProgress,
+            PotentialPayout: 80,
+          },
+        ]);
+        expect(sessionRepo.find).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              GambitTableId: 1,
+              Status: GambitSessionStatus.InProgress,
+            },
+            relations: { GambitTable: true, User: true },
+          })
+        );
+      });
+    });
+
+    describe('AdminDeactivate', () => {
+      it('should refund and close active sessions in a transaction', async () => {
+        const Table = { ...MockTable };
+        const Sessions = [
+          {
+            UserId: 'user-1',
+            Result: 120,
+            CardsPurchased: 5,
+            Status: GambitSessionStatus.InProgress,
+          },
+          {
+            UserId: 'user-2',
+            Result: null,
+            CardsPurchased: 8,
+            Status: GambitSessionStatus.InProgress,
+          },
+        ] as GambitSession[];
+        MockManager.findOne.mockResolvedValue(Table);
+        MockManager.find.mockResolvedValue(Sessions);
+        MockManager.save.mockImplementation(
+          (_Entity: unknown, Record: unknown) => Promise.resolve(Record)
+        );
+        MockManager.increment.mockResolvedValue(undefined);
+        MockSessionRegistry.release.mockResolvedValue(undefined);
+
+        await expect(service.AdminDeactivate(1)).resolves.toEqual({
+          ClosedSessions: 2,
+          ChipsReturned: 200,
+        });
+
+        expect(Table.Active).toBe(false);
+        expect(MockManager.increment).toHaveBeenNthCalledWith(
+          1,
+          expect.anything(),
+          { UserId: 'user-1' },
+          'ChipBalance',
+          120
+        );
+        expect(MockManager.increment).toHaveBeenNthCalledWith(
+          2,
+          expect.anything(),
+          { UserId: 'user-2' },
+          'ChipBalance',
+          80
+        );
+        expect(
+          Sessions.every((Session) => Session.UpdatedAt instanceof Date)
+        ).toBe(true);
+        expect(MockSessionRegistry.release).toHaveBeenCalledTimes(2);
+        expect(MockQueryRunner.commitTransaction).toHaveBeenCalledTimes(1);
+        expect(MockQueryRunner.rollbackTransaction).not.toHaveBeenCalled();
+        expect(MockQueryRunner.release).toHaveBeenCalledTimes(1);
+      });
+
+      it('should rollback when the table does not exist', async () => {
+        MockManager.findOne.mockResolvedValue(null);
+
+        await expect(service.AdminDeactivate(99)).rejects.toThrow(
+          NotFoundException
+        );
+
+        expect(MockQueryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+        expect(MockQueryRunner.release).toHaveBeenCalledTimes(1);
+        expect(MockQueryRunner.commitTransaction).not.toHaveBeenCalled();
+      });
     });
   });
 });
