@@ -37,6 +37,7 @@ pipeline {
           env.CI_PREFIX = "redgreen-ci-${branch}-${env.BUILD_NUMBER}"
           env.CI_NETWORK = "${env.CI_PREFIX}-net"
           env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+          env.JENKINS_IMAGE_TAG = "jenkins-${env.IMAGE_TAG}"
           env.API_IMAGE = 'redgreen-back-api'
           env.CI_WORKSPACE = "/workspace/${env.CI_PREFIX}"
           env.COVERAGE_REPORT_URL = "${env.REPORT_SERVER_URL}/reports/unit/${env.CI_PREFIX}/coverage/lcov-report/index.html"
@@ -287,20 +288,20 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_TOKEN')]) {
           sh '''
             set -eu
-            : "${JENKINS_IMAGE_REPO:?Set JENKINS_IMAGE_REPO in the Jenkins .env (e.g. antoniofsn2/redgreen-jenkins)}"
-            docker build -f docker/Dockerfile.jenkins -t "$JENKINS_IMAGE_REPO:$IMAGE_TAG" .
+            : "${JENKINS_IMAGE_REPO:?Set JENKINS_IMAGE_REPO in the Jenkins .env (e.g. antoniofsn2/redgreen-back)}"
+            docker build -f docker/Dockerfile.jenkins -t "$JENKINS_IMAGE_REPO:$JENKINS_IMAGE_TAG" .
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
             trap 'docker logout >/dev/null 2>&1 || true' EXIT
-            docker push "$JENKINS_IMAGE_REPO:$IMAGE_TAG"
+            docker push "$JENKINS_IMAGE_REPO:$JENKINS_IMAGE_TAG"
             if [ "${BRANCH_NAME:-}" = "main" ]; then
-              docker tag "$JENKINS_IMAGE_REPO:$IMAGE_TAG" "$JENKINS_IMAGE_REPO:latest"
-              docker push "$JENKINS_IMAGE_REPO:latest"
+              docker tag "$JENKINS_IMAGE_REPO:$JENKINS_IMAGE_TAG" "$JENKINS_IMAGE_REPO:jenkins-latest"
+              docker push "$JENKINS_IMAGE_REPO:jenkins-latest"
             fi
           '''
         }
         script {
-          def suffix = env.BRANCH_NAME == 'main' ? ' (and latest)' : ''
-          env.PUBLISHED_IMAGE = "${env.JENKINS_IMAGE_REPO}:${env.IMAGE_TAG}${suffix}"
+          def suffix = env.BRANCH_NAME == 'main' ? ' (and jenkins-latest)' : ''
+          env.PUBLISHED_IMAGE = "${env.JENKINS_IMAGE_REPO}:${env.JENKINS_IMAGE_TAG}${suffix}"
         }
       }
       post {
@@ -325,7 +326,7 @@ pipeline {
             SMOKE_ADMIN_PASSWORD="smoke-${CI_PREFIX}-jenkins-image-validation"
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
             trap 'docker rm -f "$SMOKE_CONTAINER" >/dev/null 2>&1 || true; docker logout >/dev/null 2>&1 || true' EXIT
-            docker pull "$JENKINS_IMAGE_REPO:$IMAGE_TAG"
+            docker pull "$JENKINS_IMAGE_REPO:$JENKINS_IMAGE_TAG"
             docker run -d --name "$SMOKE_CONTAINER" --network none \
               -e JENKINS_ADMIN_USER=jenkins-smoke \
               -e "JENKINS_ADMIN_PASSWORD=$SMOKE_ADMIN_PASSWORD" \
@@ -333,10 +334,10 @@ pipeline {
               -e "POSTGRES_PASSWORD=smoke-${CI_PREFIX}-postgres" \
               -e "JWT_SECRET=smoke-${CI_PREFIX}-jwt-secret" \
               -e SMTP_PASSWORD= \
-              "$JENKINS_IMAGE_REPO:$IMAGE_TAG"
+              "$JENKINS_IMAGE_REPO:$JENKINS_IMAGE_TAG"
             for attempt in $(seq 1 60); do
               if docker exec "$SMOKE_CONTAINER" curl -fsS http://127.0.0.1:8080/login >/dev/null; then
-                echo "Docker Hub Jenkins image is healthy: $JENKINS_IMAGE_REPO:$IMAGE_TAG"
+                echo "Docker Hub Jenkins image is healthy: $JENKINS_IMAGE_REPO:$JENKINS_IMAGE_TAG"
                 exit 0
               fi
               sleep 5
@@ -396,7 +397,7 @@ def markFailedStage() {
 def prepareRunner(String service, boolean installDependencies = false) {
   def output = sh(
     returnStdout: true,
-    script: "docker ps -q --filter label=com.docker.compose.project=redgreen --filter label=com.docker.compose.service='${service}'"
+    script: "docker ps -q --filter label=com.docker.compose.project=redgreen-back --filter label=com.docker.compose.service='${service}'"
   ).trim()
   def runners = output ? output.split('\n') : []
   if (runners.length != 1) {

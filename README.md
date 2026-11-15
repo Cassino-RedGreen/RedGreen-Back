@@ -200,15 +200,17 @@ Esse comando inicia PostgreSQL e API quando necessário, aguarda a API ficar sau
 
 ### Imagem Jenkins no Docker Hub
 
-A imagem exigida pelo projeto é a do Jenkins, construída de [`docker/Dockerfile.jenkins`](docker/Dockerfile.jenkins). O repositório de destino é **[hub.docker.com/r/antoniofsn2/redgreen-jenkins](https://hub.docker.com/r/antoniofsn2/redgreen-jenkins)**; a imagem ficará disponível após a primeira publicação da pipeline. O link do repositório GitHub é **[Cassino-RedGreen/RedGreen-Back](https://github.com/Cassino-RedGreen/RedGreen-Back)**. A imagem anterior `antoniofsn2/redgreen-back` foi usada apenas para validar a publicação da API e não substitui a imagem Jenkins requerida.
+A imagem exigida pelo projeto é a do Jenkins, construída de [`docker/Dockerfile.jenkins`](docker/Dockerfile.jenkins). Ela será publicada no repositório Docker Hub existente **[hub.docker.com/r/antoniofsn2/redgreen-back](https://hub.docker.com/r/antoniofsn2/redgreen-back)**.
 
-Depois que a primeira execução da pipeline publicar a imagem:
+Depois que uma execução da `main` publicar a tag estável:
 
 ```bash
-docker pull antoniofsn2/redgreen-jenkins:latest
+docker pull antoniofsn2/redgreen-back:jenkins-latest
 ```
 
-Builds da `main` publicam as tags `<build>-<commit>` e `latest`. Em outras branches, marque `PUBLISH_IMAGE` para publicar a tag imutável `<build>-<commit>`. A etapa seguinte executa `docker pull` dessa tag e inicia um Jenkins descartável a partir da imagem remota para verificar que o serviço sobe e responde.
+Builds da `main` publicam as tags `jenkins-<build>-<commit>` e `jenkins-latest`. Em outras branches, marque `PUBLISH_IMAGE` para publicar apenas a tag imutável `jenkins-<build>-<commit>`. A etapa seguinte executa `docker pull` dessa tag e inicia um Jenkins descartável a partir da imagem remota para verificar que o serviço sobe e responde.
+
+Para validar uma branch antes da primeira execução da `main`, use a tag imutável informada no build (`jenkins-<build>-<commit>`) em `JENKINS_IMAGE`.
 
 ---
 
@@ -283,18 +285,18 @@ Pipeline local em container, configurado só por código: imagem em [`docker/Doc
 
 Copie [`.env.example`](.env.example) para `.env`, preencha os campos de Jenkins e defina um `JWT_SECRET` forte. Para notificação por e-mail, o padrão usa o Mailpit local.
 
-| Variável                                                                                           | Obrigatória         | Descrição                                                                                                     |
-| -------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `JENKINS_ADMIN_USER`                                                                               | sim                 | Usuário admin provisionado por código (JCasC e init hook). O Compose recusa iniciar Jenkins se estiver vazio. |
-| `JENKINS_ADMIN_PASSWORD`                                                                           | sim                 | Senha forte do admin (16+ caracteres). O Compose recusa iniciar Jenkins se estiver vazia.                     |
-| `POSTGRES_PASSWORD`                                                                                | sim                 | Senha do PostgreSQL da stack de testes E2E.                                                                   |
-| `JWT_SECRET`                                                                                       | sim                 | Segredo da API na stack de testes E2E.                                                                        |
-| `DOCKER_SOCKET_GID`                                                                                | sim                 | Grupo do socket do Docker: `0` no Docker Desktop; no Linux, `stat -c %g /var/run/docker.sock`.                |
-| `JENKINS_PORT`, `JENKINS_PUBLIC_URL`, `MAILPIT_UI_PORT`, `REPORT_SERVER_PORT`, `REPORT_SERVER_URL` | não                 | Portas e URL pública dos serviços (padrão `8080`, `8025` e `8088`).                                           |
-| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`                                                            | sim para publicação | Credenciais Jenkins do tipo access token; o token nunca deve ser colocado no Jenkinsfile.                     |
-| `JENKINS_IMAGE_REPO`                                                                               | sim para publicação | Repositório Docker Hub da imagem Jenkins, por padrão `antoniofsn2/redgreen-jenkins`.                          |
-| `JENKINS_IMAGE`                                                                                    | não                 | Imagem/tag que o Compose deve puxar para iniciar Jenkins; por padrão `antoniofsn2/redgreen-jenkins:latest`.   |
-| `EMAIL_TO`, `EMAIL_FROM`, `SMTP_*`                                                                 | sim                 | Destino e servidor do e-mail de resultado. O padrão de desenvolvimento envia para o Mailpit.                  |
+| Variável                                                                                           | Obrigatória         | Descrição                                                                                                        |
+| -------------------------------------------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `JENKINS_ADMIN_USER`                                                                               | sim                 | Usuário admin provisionado por código (JCasC e init hook). O Compose recusa iniciar Jenkins se estiver vazio.    |
+| `JENKINS_ADMIN_PASSWORD`                                                                           | sim                 | Senha forte do admin (16+ caracteres). O Compose recusa iniciar Jenkins se estiver vazia.                        |
+| `POSTGRES_PASSWORD`                                                                                | sim                 | Senha do PostgreSQL da stack de testes E2E.                                                                      |
+| `JWT_SECRET`                                                                                       | sim                 | Segredo da API na stack de testes E2E.                                                                           |
+| `DOCKER_SOCKET_GID`                                                                                | sim                 | Grupo do socket do Docker: `0` no Docker Desktop; no Linux, `stat -c %g /var/run/docker.sock`.                   |
+| `JENKINS_PORT`, `JENKINS_PUBLIC_URL`, `MAILPIT_UI_PORT`, `REPORT_SERVER_PORT`, `REPORT_SERVER_URL` | não                 | Portas e URL pública dos serviços (padrão `8080`, `8025` e `8088`).                                              |
+| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`                                                            | sim para publicação | Credenciais Jenkins do tipo access token; o token nunca deve ser colocado no Jenkinsfile.                        |
+| `JENKINS_IMAGE_REPO`                                                                               | sim para publicação | Repositório Docker Hub da imagem Jenkins, por padrão `antoniofsn2/redgreen-back`.                                |
+| `JENKINS_IMAGE`                                                                                    | não                 | Imagem/tag que o Compose deve puxar para iniciar Jenkins; por padrão `antoniofsn2/redgreen-back:jenkins-latest`. |
+| `EMAIL_TO`, `EMAIL_FROM`, `SMTP_*`                                                                 | sim                 | Destino e servidor do e-mail de resultado. O padrão de desenvolvimento envia para o Mailpit.                     |
 
 > **Nunca commite o `.env`.** Ele já está no `.gitignore` e guarda senhas e tokens.
 > Para entrega fora do ambiente local, substitua `EMAIL_TO` pelos destinatários reais e configure o SMTP; a configuração padrão encaminha as mensagens ao Mailpit local.
@@ -317,7 +319,7 @@ O serviço normal sempre puxa Jenkins do Docker Hub. Como a imagem ainda precisa
 docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml up -d --build
 ```
 
-Antes disso, crie o repositório Docker Hub `antoniofsn2/redgreen-jenkins` e configure no `.env` o usuário/token Docker Hub, `JENKINS_IMAGE_REPO`, as credenciais administrativas e os segredos obrigatórios. Na execução inicial, o Jenkins local roda a pipeline; na `main`, ela publica `<build>-<commit>` e `latest`. Em outra branch, habilite `PUBLISH_IMAGE` no build para publicar a tag imutável.
+Configure no `.env` o usuário/token Docker Hub, `JENKINS_IMAGE_REPO`, as credenciais administrativas e os segredos obrigatórios. A pipeline reutiliza `antoniofsn2/redgreen-back` sem substituir tags da API: na `main`, publica `jenkins-<build>-<commit>` e `jenkins-latest`; em outra branch, habilite `PUBLISH_IMAGE` para publicar apenas a tag imutável.
 
 Após a publicação, configure `JENKINS_IMAGE` com a tag publicada (ou `latest` após uma execução da `main`) e inicie Jenkins pelo Compose normal:
 
