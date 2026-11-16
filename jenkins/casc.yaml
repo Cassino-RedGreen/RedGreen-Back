@@ -38,7 +38,7 @@ credentials:
           - usernamePassword:
               scope: GLOBAL
               id: dockerhub
-              description: 'Usuario e access token do Docker Hub'
+              description: 'Usuario e access token para publicar a imagem Jenkins no Docker Hub'
               username: "${DOCKERHUB_USERNAME:-}"
               password: "${DOCKERHUB_TOKEN:-}"
 

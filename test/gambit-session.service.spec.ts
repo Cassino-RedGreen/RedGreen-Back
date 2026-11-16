@@ -325,6 +325,56 @@ describe('GambitSessionService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('rejects a user who does not exist', async () => {
+      const { Mgr } = UseQueryRunner();
+      Mgr.findOne.mockImplementation((Entity: unknown) =>
+        Entity === GambitTable
+          ? Promise.resolve(BuildTable())
+          : Promise.resolve(null)
+      );
+
+      await expect(
+        Service.Create(1, { CardsPurchased: 10 }, 'missing-user')
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('enforces the table chip requirement independently of the card cost', async () => {
+      const { Mgr } = UseQueryRunner();
+      Mgr.findOne.mockImplementation((Entity: unknown) => {
+        if (Entity === GambitTable) {
+          return Promise.resolve(BuildTable({ MinimumChipsRequired: 100 }));
+        }
+        if (Entity === User) {
+          return Promise.resolve({ UserId: 'user1', ChipBalance: 75 });
+        }
+        return Promise.resolve(null);
+      });
+
+      await expect(
+        Service.Create(1, { CardsPurchased: 5 }, 'user1')
+      ).rejects.toThrow('Insufficient chips to access this table');
+    });
+
+    it('allows access when the balance meets the table chip requirement', async () => {
+      const { Mgr } = UseQueryRunner();
+      const Saved = BuildSession({ CardsPurchased: 5 });
+      Mgr.findOne.mockImplementation((Entity: unknown) => {
+        if (Entity === GambitTable) {
+          return Promise.resolve(BuildTable({ MinimumChipsRequired: 100 }));
+        }
+        if (Entity === User) {
+          return Promise.resolve({ UserId: 'user1', ChipBalance: 150 });
+        }
+        return Promise.resolve(null);
+      });
+      Mgr.create.mockReturnValue(Saved);
+      Mgr.save.mockResolvedValue(Saved);
+
+      await expect(
+        Service.Create(1, { CardsPurchased: 5 }, 'user1')
+      ).resolves.toMatchObject({ currentBalance: 100 });
+    });
+
     it('rejects an inactive table', async () => {
       const { Mgr } = UseQueryRunner();
       Mgr.findOne.mockImplementation((Entity: unknown) =>
@@ -343,6 +393,14 @@ describe('GambitSessionService', () => {
       await expect(
         Service.Create(1, { CardsPurchased: 10 }, 'user1')
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('GetActiveSessionView', () => {
+    it('returns null when the user has no active session', async () => {
+      Repo.findOne.mockResolvedValue(null);
+
+      await expect(Service.GetActiveSessionView('user1')).resolves.toBeNull();
     });
   });
 
@@ -408,6 +466,17 @@ describe('GambitSessionService', () => {
       expect(View.AccumulatedPoints).toBe(0);
     });
 
+    it('RANDOM_POINTS adds the deterministic minimum effect value', async () => {
+      const Random = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      try {
+        const View = await BurnWithEffect(GambitCard.JONAS_JOKER);
+        expect(View.AccumulatedPoints).toBe(10 - 50);
+      } finally {
+        Random.mockRestore();
+      }
+    });
+
     it('ADD_BURN_SLOT grants one more burn', async () => {
       const View = await BurnWithEffect(GambitCard.QUANTO_MAIS_MELHOR);
       expect(View.BurnSlotsAvailable).toBe(11);
@@ -432,6 +501,22 @@ describe('GambitSessionService', () => {
         SelectedPositions: [],
       });
     });
+
+    it('TRANSFORM_CARD changes an unlocked unrevealed card effect', async () => {
+      const Random = jest.spyOn(Math, 'random').mockReturnValue(0);
+      const Snap = BuildSnapshot();
+      Snap.Unrevealed[0].Effect = GambitCard.MOSCA_JOKER;
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ CurrentGridSnapshot: Snap })
+      );
+
+      try {
+        await Service.Burn('user1', 0);
+        expect(Snap.Unrevealed.some((Card) => Card.Effect !== null)).toBe(true);
+      } finally {
+        Random.mockRestore();
+      }
+    });
   });
 
   describe('Burn — new cards', () => {
@@ -445,6 +530,36 @@ describe('GambitSessionService', () => {
       Snap.Unrevealed[0].Effect = GambitCard.JACKPOT;
       const View = await BurnAt(BuildSession({ CurrentGridSnapshot: Snap }));
       expect(View.AccumulatedPoints).toBe(10 + 200);
+    });
+
+    describe('Burn validation', () => {
+      it('rejects when there is no active session', async () => {
+        Repo.findOne.mockResolvedValue(null);
+
+        await expect(Service.Burn('user1', 0)).rejects.toBeInstanceOf(
+          NotFoundException
+        );
+      });
+
+      it('rejects a session that is no longer in progress', async () => {
+        Repo.findOne.mockResolvedValue(
+          BuildSession({ Status: GambitSessionStatus.Finished })
+        );
+
+        await expect(Service.Burn('user1', 0)).rejects.toThrow(
+          'Session is not in progress'
+        );
+      });
+
+      it('rejects a session without a grid snapshot', async () => {
+        Repo.findOne.mockResolvedValue(
+          BuildSession({ CurrentGridSnapshot: null })
+        );
+
+        await expect(Service.Burn('user1', 0)).rejects.toThrow(
+          'Session has no grid snapshot'
+        );
+      });
     });
 
     it('RATIMUNDIO adds a large negative amount (-200)', async () => {
@@ -490,6 +605,30 @@ describe('GambitSessionService', () => {
       const Sabotaged = Snap.Unrevealed.find((C) => C.Position === 5);
       expect(Sabotaged?.Points).toBe(-90);
     });
+
+    it('does nothing when PAO_COM_OQUE has no unrevealed cards to sabotage', async () => {
+      const Snap = BuildSnapshot({
+        Unrevealed: [
+          {
+            Position: 0,
+            Points: 10,
+            Effect: GambitCard.PAO_COM_OQUE,
+            Locked: false,
+          },
+        ],
+      });
+      Repo.findOne.mockResolvedValue(
+        BuildSession({
+          BurnSlotsAvailable: 1,
+          CurrentGridSnapshot: Snap,
+        })
+      );
+
+      const View = await Service.Burn('user1', 0);
+
+      expect(View.Status).toBe(GambitSessionStatus.Finished);
+      expect(Snap.Unrevealed).toHaveLength(0);
+    });
   });
 
   describe('Burn — end of game / settlement', () => {
@@ -524,6 +663,25 @@ describe('GambitSessionService', () => {
       const View = await Service.Burn('user1', 0);
       expect(View.Status).toBe(GambitSessionStatus.Finished);
       expect(View.Result).toBe(0);
+    });
+
+    it('uses the default table multiplier when the table is missing', async () => {
+      TableRepo.findOne.mockResolvedValue(null);
+      Repo.findOne.mockResolvedValue(
+        BuildSession({
+          BurnSlotsAvailable: 1,
+          ManualFlipsCount: 0,
+          AccumulatedPoints: 40,
+          CardsPurchased: 10,
+        })
+      );
+
+      const View = await Service.Burn('user1', 0);
+
+      expect(View.Status).toBe(GambitSessionStatus.Finished);
+      expect(View.Result).toBe(
+        Math.max(0, Math.floor(50 * CalcMultiplier(10, 1)))
+      );
     });
 
     it('rejects burning a locked card', async () => {
@@ -648,9 +806,78 @@ describe('GambitSessionService', () => {
         NotFoundException
       );
     });
+
+    it('rejects a session that was already cashed out', async () => {
+      Repo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(
+          BuildSession({ Status: GambitSessionStatus.CashedOut })
+        );
+
+      await expect(Service.CashOut('user1')).rejects.toThrow(
+        'Session has already been cashed out'
+      );
+    });
+
+    it('rolls back when the current session cannot be found in the transaction', async () => {
+      Repo.findOne.mockResolvedValue(BuildSession());
+      const { Mgr, Qr } = UseQueryRunner();
+      Mgr.findOne.mockResolvedValue(null);
+
+      await expect(Service.CashOut('user1')).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+      expect(Qr.rollbackTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back when the user does not exist', async () => {
+      const Finished = BuildSession({
+        Status: GambitSessionStatus.Finished,
+        Result: 25,
+      });
+      Repo.findOne.mockResolvedValue(Finished);
+      const { Mgr, Qr } = UseQueryRunner();
+      Mgr.findOne.mockImplementation((Entity: unknown) =>
+        Entity === GambitSession
+          ? Promise.resolve(Finished)
+          : Promise.resolve(null)
+      );
+
+      await expect(Service.CashOut('user1')).rejects.toBeInstanceOf(
+        NotFoundException
+      );
+      expect(Qr.rollbackTransaction).toHaveBeenCalledTimes(1);
+      expect(Mgr.increment).not.toHaveBeenCalled();
+    });
   });
 
   describe('ResolveEvent', () => {
+    it('rejects when there is no active session', async () => {
+      Repo.findOne.mockResolvedValue(null);
+
+      await expect(
+        Service.ResolveEvent('user1', { GoodIndex: 0, BadIndex: 0 })
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects a session that is no longer in progress', async () => {
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ Status: GambitSessionStatus.Finished })
+      );
+
+      await expect(
+        Service.ResolveEvent('user1', { GoodIndex: 0, BadIndex: 0 })
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects when there is no pending event', async () => {
+      Repo.findOne.mockResolvedValue(BuildSession());
+
+      await expect(
+        Service.ResolveEvent('user1', { GoodIndex: 0, BadIndex: 0 })
+      ).rejects.toThrow('There is no selection event to resolve');
+    });
+
     it('substitutes the chosen good + bad cards into the board', async () => {
       const Snap = BuildSnapshot({
         PendingEvent: {
@@ -701,6 +928,67 @@ describe('GambitSessionService', () => {
       await expect(
         Service.ResolveEvent('user1', { GoodIndex: 5, BadIndex: 0 })
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects an out-of-range bad-card index', async () => {
+      const Snap = BuildSnapshot({
+        PendingEvent: {
+          GoodOptions: [GambitCard.DOBRO_DE_POTASSIO],
+          BadOptions: [GambitCard.MELANCIDIO],
+        },
+      });
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ CurrentGridSnapshot: Snap })
+      );
+
+      await expect(
+        Service.ResolveEvent('user1', { GoodIndex: 0, BadIndex: 1 })
+      ).rejects.toThrow('Selection index out of range');
+    });
+
+    it('uses unlocked occupied positions when no empty position remains', async () => {
+      const Random = jest.spyOn(Math, 'random').mockReturnValue(0);
+      const Snap = BuildSnapshot({
+        PendingEvent: {
+          GoodOptions: [GambitCard.DOBRO_DE_POTASSIO],
+          BadOptions: [GambitCard.MELANCIDIO],
+        },
+      });
+      Snap.Unrevealed.forEach((Card) => {
+        Card.Effect = GambitCard.JACKPOT;
+      });
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ CurrentGridSnapshot: Snap })
+      );
+
+      try {
+        await Service.ResolveEvent('user1', { GoodIndex: 0, BadIndex: 0 });
+        expect(Snap.Unrevealed[0].Effect).toBe(GambitCard.MELANCIDIO);
+      } finally {
+        Random.mockRestore();
+      }
+    });
+
+    it('leaves the board unchanged when every position is locked', async () => {
+      const Snap = BuildSnapshot({
+        PendingEvent: {
+          GoodOptions: [GambitCard.DOBRO_DE_POTASSIO],
+          BadOptions: [GambitCard.MELANCIDIO],
+        },
+      });
+      Snap.Unrevealed.forEach((Card) => {
+        Card.Locked = true;
+        Card.Effect = GambitCard.JACKPOT;
+      });
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ CurrentGridSnapshot: Snap })
+      );
+
+      await Service.ResolveEvent('user1', { GoodIndex: 0, BadIndex: 0 });
+
+      expect(
+        Snap.Unrevealed.every((Card) => Card.Effect === GambitCard.JACKPOT)
+      ).toBe(true);
     });
   });
 
@@ -779,6 +1067,32 @@ describe('GambitSessionService', () => {
       expect((Res.PeekResult as { AtLeastOneBad: boolean }).AtLeastOneBad).toBe(
         true
       );
+    });
+
+    it('ResolveEffect rejects when there is no active session', async () => {
+      Repo.findOne.mockResolvedValue(null);
+
+      await expect(
+        Service.ResolveEffect('user1', { Positions: [0] })
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('ResolveEffect rejects a session that is no longer in progress', async () => {
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ Status: GambitSessionStatus.Finished })
+      );
+
+      await expect(
+        Service.ResolveEffect('user1', { Positions: [0] })
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('ResolveEffect rejects when there is no pending interaction', async () => {
+      Repo.findOne.mockResolvedValue(BuildSession());
+
+      await expect(
+        Service.ResolveEffect('user1', { Positions: [0] })
+      ).rejects.toThrow('There is no effect interaction to resolve');
     });
 
     it('REVEAL on a normal card shows its REAL effect (no disguise)', async () => {
@@ -912,6 +1226,17 @@ describe('GambitSessionService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('ResolveEffect rejects a position that is not on the unrevealed board', async () => {
+      const Snap = WithInteraction(GambitCard.CLARIVIDENCIA, 'SELECT_CARD', 1);
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ CurrentGridSnapshot: Snap })
+      );
+
+      await expect(
+        Service.ResolveEffect('user1', { Positions: [99] })
+      ).rejects.toThrow('is not an unrevealed card');
+    });
+
     it('LOCK_GOOD_CARD locks a Good-tagged card, which can no longer be burned', async () => {
       const Snap = BuildSnapshot();
       Snap.Unrevealed[0].Effect = GambitCard.MENTE_LISA;
@@ -927,6 +1252,37 @@ describe('GambitSessionService', () => {
       await expect(Service.Burn('user1', 1)).rejects.toBeInstanceOf(
         BadRequestException
       );
+    });
+
+    it('LOCK_GOOD_CARD does nothing when no good effect remains on the board', async () => {
+      const Snap = BuildSnapshot();
+      Snap.Unrevealed[0].Effect = GambitCard.MENTE_LISA;
+      Repo.findOne.mockResolvedValue(
+        BuildSession({ CurrentGridSnapshot: Snap })
+      );
+
+      await Service.Burn('user1', 0);
+
+      expect(Snap.Unrevealed.every((Card) => !Card.Locked)).toBe(true);
+    });
+
+    it('TRANSFORM_CARD does nothing when every remaining card is locked', async () => {
+      const Snap = BuildSnapshot();
+      Snap.Unrevealed[0].Effect = GambitCard.MOSCA_JOKER;
+      Snap.Unrevealed.slice(1).forEach((Card) => {
+        Card.Locked = true;
+      });
+      Repo.findOne.mockResolvedValue(
+        BuildSession({
+          BurnSlotsAvailable: 1,
+          CurrentGridSnapshot: Snap,
+        })
+      );
+
+      await Service.Burn('user1', 0);
+
+      expect(Snap.Unrevealed.every((Card) => Card.Locked)).toBe(true);
+      expect(Snap.Unrevealed.every((Card) => Card.Effect === null)).toBe(true);
     });
 
     it('HEADGEAR keeps an already-negative next card negative', async () => {

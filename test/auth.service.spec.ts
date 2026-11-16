@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -11,6 +11,8 @@ import * as bcrypt from 'bcrypt';
 describe('AuthService', () => {
   let service: AuthService;
   let MockUserRepo: {
+    create: jest.Mock;
+    createQueryBuilder: jest.Mock;
     findOne: jest.Mock;
     save: jest.Mock;
     find: jest.Mock;
@@ -34,6 +36,8 @@ describe('AuthService', () => {
 
   beforeEach(async () => {
     MockUserRepo = {
+      create: jest.fn(),
+      createQueryBuilder: jest.fn(),
       findOne: jest.fn(),
       save: jest.fn(),
       find: jest.fn(),
@@ -58,6 +62,150 @@ describe('AuthService', () => {
     }).compile();
 
     service = module.get<AuthService>(AuthService);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  const SetupLoginQuery = (FoundUser: User | null) => {
+    const QueryBuilder = {
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(FoundUser),
+    };
+    MockUserRepo.createQueryBuilder.mockReturnValue(QueryBuilder);
+    return QueryBuilder;
+  };
+
+  describe('Register', () => {
+    const CreateUserDto = {
+      Name: 'Jane Doe',
+      BirthDate: '1990-12-29',
+      Nickname: 'janed',
+      Email: 'jane.doe@example.com',
+      Password: 'plain-password',
+    };
+
+    it('should reject an already registered email before checking nickname', async () => {
+      MockUserRepo.findOne.mockResolvedValue(ValidUser);
+
+      await expect(service.Register(CreateUserDto)).rejects.toThrow(
+        'Email already registered'
+      );
+
+      expect(MockUserRepo.findOne).toHaveBeenCalledTimes(1);
+      expect(MockUserRepo.findOne).toHaveBeenCalledWith({
+        where: { Email: CreateUserDto.Email },
+      });
+      expect(bcrypt.hash).not.toHaveBeenCalled();
+      expect(MockUserRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should reject an already used nickname', async () => {
+      MockUserRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(ValidUser);
+
+      await expect(service.Register(CreateUserDto)).rejects.toThrow(
+        'Nickname already taken'
+      );
+
+      expect(MockUserRepo.findOne).toHaveBeenNthCalledWith(2, {
+        where: { Nickname: CreateUserDto.Nickname },
+      });
+      expect(bcrypt.hash).not.toHaveBeenCalled();
+      expect(MockUserRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should hash the password, apply defaults, and return a sanitized user', async () => {
+      const SavedUser = {
+        ...ValidUser,
+        Password: 'hashed-password',
+        ChipBalance: 0,
+        DailyLoginStreak: 0,
+      };
+      MockUserRepo.findOne.mockResolvedValue(null);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+      MockUserRepo.create.mockReturnValue(SavedUser);
+      MockUserRepo.save.mockResolvedValue(SavedUser);
+
+      const Result = await service.Register(CreateUserDto);
+
+      expect(bcrypt.hash).toHaveBeenCalledWith(CreateUserDto.Password, 10);
+      expect(MockUserRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          Email: CreateUserDto.Email,
+          Nickname: CreateUserDto.Nickname,
+          Name: CreateUserDto.Name,
+          BirthDate: CreateUserDto.BirthDate,
+          Password: 'hashed-password',
+          ChipBalance: 0,
+          DailyLoginStreak: 0,
+          Active: true,
+        })
+      );
+      expect(MockUserRepo.save).toHaveBeenCalledWith(SavedUser);
+      expect(Result).not.toHaveProperty('Password');
+    });
+  });
+
+  describe('Login', () => {
+    const LoginDto = {
+      Email: ValidUser.Email,
+      Password: 'plain-password',
+    };
+
+    it('should reject when the email is not registered', async () => {
+      const QueryBuilder = SetupLoginQuery(null);
+
+      await expect(service.Login(LoginDto)).rejects.toThrow(
+        UnauthorizedException
+      );
+
+      expect(QueryBuilder.addSelect).toHaveBeenCalledWith('user.Password');
+      expect(QueryBuilder.where).toHaveBeenCalledWith('user.Email = :email', {
+        email: LoginDto.Email,
+      });
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it('should reject inactive accounts without checking their password', async () => {
+      SetupLoginQuery({ ...ValidUser, Active: false });
+
+      await expect(service.Login(LoginDto)).rejects.toThrow(
+        'User is not active'
+      );
+
+      expect(bcrypt.compare).not.toHaveBeenCalled();
+    });
+
+    it('should reject an incorrect password', async () => {
+      SetupLoginQuery(ValidUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(service.Login(LoginDto)).rejects.toThrow(
+        'Invalid credentials'
+      );
+
+      expect(bcrypt.compare).toHaveBeenCalledWith(
+        LoginDto.Password,
+        ValidUser.Password
+      );
+    });
+
+    it('should return the authenticated user without the password', async () => {
+      SetupLoginQuery(ValidUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const Result = await service.Login(LoginDto);
+
+      expect(Result).toEqual(
+        expect.objectContaining({ UserId: ValidUser.UserId })
+      );
+      expect(Result).not.toHaveProperty('Password');
+    });
   });
 
   it('should return the user profile without Password', async () => {
@@ -91,6 +239,191 @@ describe('AuthService', () => {
     expect(MockUserRepo.findOne).toHaveBeenCalledWith({
       where: { UserId: 'MissingUser' },
     });
+  });
+
+  describe('Chip balance', () => {
+    it('should return a user chip balance', async () => {
+      MockUserRepo.findOne.mockResolvedValue(ValidUser);
+
+      await expect(service.GetChipBalance(ValidUser.UserId)).resolves.toEqual({
+        ChipBalance: ValidUser.ChipBalance,
+      });
+    });
+
+    it('should reject when reading a missing user balance', async () => {
+      MockUserRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.GetChipBalance('missing')).rejects.toThrow(
+        'User not found'
+      );
+    });
+
+    it('should update the balance when the resulting amount is non-negative', async () => {
+      const ExistingUser = { ...ValidUser, ChipBalance: 100 };
+      MockUserRepo.findOne.mockResolvedValue(ExistingUser);
+      MockUserRepo.save.mockImplementation((UserToSave) =>
+        Promise.resolve(UserToSave)
+      );
+
+      await expect(
+        service.UpdateChipBalance(ExistingUser.UserId, -40)
+      ).resolves.toEqual({ ChipBalance: 60 });
+      expect(MockUserRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ ChipBalance: 60 })
+      );
+    });
+
+    it('should reject a balance update that would make the balance negative', async () => {
+      const ExistingUser = { ...ValidUser, ChipBalance: 10 };
+      MockUserRepo.findOne.mockResolvedValue(ExistingUser);
+
+      await expect(
+        service.UpdateChipBalance(ExistingUser.UserId, -11)
+      ).rejects.toThrow('Insufficient chips');
+      expect(MockUserRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should reject a balance update for a missing user', async () => {
+      MockUserRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.UpdateChipBalance('missing', 10)).rejects.toThrow(
+        'User not found'
+      );
+    });
+  });
+
+  describe('IsEmailTaken', () => {
+    it('should report when an email is already registered', async () => {
+      MockUserRepo.findOne.mockResolvedValue(ValidUser);
+
+      await expect(service.IsEmailTaken(ValidUser.Email)).resolves.toEqual({
+        Email: ValidUser.Email,
+        taken: true,
+      });
+    });
+
+    it('should report when an email is available', async () => {
+      MockUserRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.IsEmailTaken('new@example.com')).resolves.toEqual({
+        Email: 'new@example.com',
+        taken: false,
+      });
+    });
+  });
+
+  describe('CheckDailyLogin', () => {
+    const Today = new Date(2026, 3, 10, 12, 0, 0);
+
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(Today);
+    });
+
+    it('should grant the first-day reward when the user has never logged in', async () => {
+      const ExistingUser = {
+        ...ValidUser,
+        ChipBalance: 100,
+        DailyLoginStreak: 0,
+        LastLoginDate: null,
+      };
+      MockUserRepo.findOne.mockResolvedValue(ExistingUser);
+      MockUserRepo.save.mockImplementation((UserToSave) =>
+        Promise.resolve(UserToSave)
+      );
+
+      await expect(
+        service.CheckDailyLogin(ExistingUser.UserId)
+      ).resolves.toEqual({
+        FirstLoginToday: true,
+        DailyStreak: 1,
+        Reward: 50,
+        ChipBalance: 150,
+      });
+      expect(ExistingUser.LastLoginDate).toEqual(Today);
+      expect(MockUserRepo.save).toHaveBeenCalledWith(ExistingUser);
+    });
+
+    it('should not grant a second reward on the same calendar day', async () => {
+      const ExistingUser = {
+        ...ValidUser,
+        LastLoginDate: new Date(2026, 3, 10, 0, 1, 0),
+      };
+      MockUserRepo.findOne.mockResolvedValue(ExistingUser);
+
+      await expect(
+        service.CheckDailyLogin(ExistingUser.UserId)
+      ).resolves.toEqual({
+        FirstLoginToday: false,
+        DailyStreak: ExistingUser.DailyLoginStreak,
+        ChipBalance: ExistingUser.ChipBalance,
+        Reward: 0,
+      });
+      expect(MockUserRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should continue a consecutive streak and cap its reward at seven days', async () => {
+      const ExistingUser = {
+        ...ValidUser,
+        ChipBalance: 100,
+        DailyLoginStreak: 7,
+        LastLoginDate: new Date(2026, 3, 9, 23, 59, 0),
+      };
+      MockUserRepo.findOne.mockResolvedValue(ExistingUser);
+      MockUserRepo.save.mockImplementation((UserToSave) =>
+        Promise.resolve(UserToSave)
+      );
+
+      await expect(
+        service.CheckDailyLogin(ExistingUser.UserId)
+      ).resolves.toEqual({
+        FirstLoginToday: true,
+        DailyStreak: 7,
+        Reward: 350,
+        ChipBalance: 450,
+      });
+    });
+
+    it('should reset the streak after a missed day', async () => {
+      const ExistingUser = {
+        ...ValidUser,
+        ChipBalance: 100,
+        DailyLoginStreak: 5,
+        LastLoginDate: new Date(2026, 3, 8, 12, 0, 0),
+      };
+      MockUserRepo.findOne.mockResolvedValue(ExistingUser);
+      MockUserRepo.save.mockImplementation((UserToSave) =>
+        Promise.resolve(UserToSave)
+      );
+
+      await expect(
+        service.CheckDailyLogin(ExistingUser.UserId)
+      ).resolves.toEqual({
+        FirstLoginToday: true,
+        DailyStreak: 1,
+        Reward: 50,
+        ChipBalance: 150,
+      });
+    });
+
+    it('should reject when checking a missing user', async () => {
+      MockUserRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.CheckDailyLogin('missing')).rejects.toThrow(
+        'User not found'
+      );
+    });
+  });
+
+  it('should sign a token with the user id and configured claims', async () => {
+    (MockJwtService.signAsync as jest.Mock).mockResolvedValue('signed-token');
+
+    await expect(service.SignToken(ValidUser.UserId)).resolves.toBe(
+      'signed-token'
+    );
+    expect(MockJwtService.signAsync).toHaveBeenCalledWith(
+      { UserId: ValidUser.UserId },
+      { algorithm: 'HS256', expiresIn: '1h' }
+    );
   });
 
   it('should update allowed user fields correctly', async () => {

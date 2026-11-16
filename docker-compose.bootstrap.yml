@@ -1,0 +1,7 @@
+services:
+  jenkins:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.jenkins
+    image: redgreen-jenkins:bootstrap
+    pull_policy: never
