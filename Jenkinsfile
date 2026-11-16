@@ -323,7 +323,7 @@ pipeline {
           sh '''
             set -eu
             SMOKE_CONTAINER="$CI_PREFIX-jenkins-image-smoke"
-            SMOKE_ADMIN_PASSWORD="smoke-${CI_PREFIX}-jenkins-image-validation"
+            SMOKE_ADMIN_PASSWORD="smoke-${BUILD_NUMBER}-jenkins"
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
             trap 'docker rm -f "$SMOKE_CONTAINER" >/dev/null 2>&1 || true; docker logout >/dev/null 2>&1 || true' EXIT
             docker pull "$JENKINS_IMAGE_REPO:$JENKINS_IMAGE_TAG"
